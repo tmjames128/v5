@@ -1,0 +1,2304 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Music Visualizer</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&display=swap');
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{--bg:#080810;--c1:#7b2fff;--c2:#ff2f8e;--c3:#2fffcb;--c4:#ff8c2f;--c5:#fff020;--text:#e0ddf5;--muted:#5a5580}
+html,body{width:100%;height:100%;background:var(--bg);color:var(--text);font-family:'Space Mono',monospace;overflow:hidden;user-select:none}
+
+/* IDLE */
+#idle{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:24px;background:var(--bg);z-index:20;transition:opacity .7s}
+#idle.hidden{opacity:0;pointer-events:none}
+.logo{font-size:clamp(2rem,6vw,3.8rem);font-weight:700;letter-spacing:-.02em;background:linear-gradient(135deg,var(--c1),var(--c2),var(--c3));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.subtitle{font-size:.75rem;color:var(--muted);letter-spacing:.2em;text-transform:uppercase}
+.btn-row{display:flex;gap:14px;flex-wrap:wrap;justify-content:center;margin-top:12px}
+#startBtn{padding:13px 28px;font-family:'Space Mono',monospace;font-size:.78rem;letter-spacing:.12em;text-transform:uppercase;border:1.5px solid var(--c1);background:transparent;color:var(--c1);border-radius:2px;cursor:pointer;transition:background .2s,color .2s,box-shadow .2s}
+#startBtn:hover{background:var(--c1);color:var(--bg);box-shadow:0 0 28px var(--c1)}
+#sysAudioBtn{padding:13px 28px;font-family:'Space Mono',monospace;font-size:.78rem;letter-spacing:.12em;text-transform:uppercase;border:1.5px solid var(--c3);background:transparent;color:var(--c3);border-radius:2px;cursor:pointer;transition:background .2s,color .2s,box-shadow .2s}
+#sysAudioBtn:hover{background:var(--c3);color:var(--bg);box-shadow:0 0 28px var(--c3)}
+.hint{font-size:.7rem;color:var(--muted);max-width:380px;text-align:center;line-height:1.75}
+/* source indicator badge */
+#srcBadge{position:fixed;top:46px;left:18px;z-index:30;padding:4px 10px;font-family:'Space Mono',monospace;font-size:.58rem;letter-spacing:.12em;text-transform:uppercase;border:1px solid rgba(255,255,255,.13);background:rgba(8,8,16,.82);color:var(--muted);border-radius:2px;backdrop-filter:blur(10px);display:none;}
+#srcBadge.visible{display:block}
+
+/* CANVAS */
+#canvas{position:fixed;inset:0;width:100%;height:100%}
+
+/* BOTTOM PANEL */
+#panel{position:fixed;bottom:0;left:0;right:0;display:flex;flex-direction:column;align-items:center;padding:0 0 14px;gap:8px;opacity:0;transition:opacity .4s;z-index:10}
+#panel.visible{opacity:1}
+#presetRow,#colorRow{display:flex;flex-wrap:wrap;justify-content:center;gap:6px;max-width:min(96vw,960px);padding:0 10px}
+
+/* separator label */
+.rowLabel{font-size:.55rem;letter-spacing:.2em;text-transform:uppercase;color:var(--muted);width:100%;text-align:center;margin-top:2px}
+
+.pbtn{padding:5px 13px;font-family:'Space Mono',monospace;font-size:.62rem;letter-spacing:.09em;text-transform:uppercase;border:1px solid rgba(255,255,255,.13);background:rgba(8,8,16,.8);color:var(--text);border-radius:2px;cursor:pointer;backdrop-filter:blur(10px);transition:border-color .2s,color .2s,background .2s;white-space:nowrap}
+.pbtn:hover{border-color:var(--c3);color:var(--c3)}
+.pbtn.active{border-color:var(--c2);color:var(--c2);background:rgba(255,47,142,.09)}
+.pbtn.auto{border-color:var(--c5);color:var(--c5)}
+.pbtn.auto.active{background:rgba(255,240,32,.08)}
+
+/* COLOR THEME BUTTONS */
+.cbtn{padding:5px 13px;font-family:'Space Mono',monospace;font-size:.62rem;letter-spacing:.09em;text-transform:uppercase;border:1px solid rgba(255,255,255,.13);background:rgba(8,8,16,.8);color:var(--text);border-radius:2px;cursor:pointer;backdrop-filter:blur(10px);transition:border-color .18s,color .18s,background .18s;white-space:nowrap;display:flex;align-items:center;gap:6px}
+.cbtn:hover{border-color:rgba(255,255,255,.4)}
+.cbtn.active{background:rgba(255,255,255,.07)}
+.cswatch{width:28px;height:8px;border-radius:2px;display:inline-block;flex-shrink:0}
+
+/* HUD TOP */
+#topHud{position:fixed;top:16px;left:0;right:0;display:flex;justify-content:space-between;align-items:flex-start;padding:0 20px;opacity:0;transition:opacity .4s;z-index:10;pointer-events:none}
+#topHud.visible{opacity:1;pointer-events:auto}
+#modeLabel{font-size:.6rem;letter-spacing:.2em;text-transform:uppercase;color:var(--muted)}
+#energyBox{font-size:.6rem;letter-spacing:.1em;color:var(--muted)}
+#energyBox span{color:var(--c3);font-weight:700;font-size:1rem}
+
+/* FULLSCREEN BUTTON */
+#fsBtn{
+  position:fixed;top:14px;right:18px;z-index:30;
+  padding:5px 11px;
+  font-family:'Space Mono',monospace;font-size:.62rem;letter-spacing:.1em;
+  text-transform:uppercase;
+  border:1px solid rgba(255,255,255,.18);
+  background:rgba(8,8,16,.82);color:rgba(255,255,255,.55);
+  border-radius:2px;cursor:pointer;
+  backdrop-filter:blur(10px);
+  transition:border-color .2s,color .2s,box-shadow .2s;
+  display:none;align-items:center;gap:6px;
+}
+#fsBtn.visible{display:flex}
+#fsBtn:hover{border-color:var(--c3);color:var(--c3);box-shadow:0 0 12px rgba(47,255,203,.2)}
+#fsBtn svg{width:12px;height:12px;fill:currentColor;flex-shrink:0}
+
+/* BACK BUTTON */
+#backBtn{
+  position:fixed;top:14px;left:18px;z-index:30;
+  padding:5px 11px;
+  font-family:'Space Mono',monospace;font-size:.62rem;letter-spacing:.1em;
+  text-transform:uppercase;
+  border:1px solid rgba(255,255,255,.18);
+  background:rgba(8,8,16,.82);color:rgba(255,255,255,.45);
+  border-radius:2px;cursor:pointer;
+  backdrop-filter:blur(10px);
+  transition:border-color .2s,color .2s,box-shadow .2s;
+  display:none;align-items:center;gap:5px;
+}
+#backBtn.visible{display:flex}
+#backBtn:hover{border-color:var(--c2);color:var(--c2);box-shadow:0 0 12px rgba(255,47,142,.2)}
+
+</style>
+</head>
+<body>
+
+<div id="idle">
+  <div class="logo">VISUALIZER</div>
+  <div class="subtitle">Milkdrop-Style Audio Presets</div>
+  <div class="btn-row">
+    <button id="startBtn">🎤 Microphone</button>
+    <button id="sysAudioBtn">🖥 System Audio</button>
+  </div>
+  <p class="hint" id="idleHint">Use <b>Microphone</b> to capture ambient sound, or <b>System Audio</b> to sync to a browser tab — pick a tab and check "Share tab audio" in the dialog.</p>
+</div>
+
+<!-- source badge (top-left, shown after start) -->
+<div id="srcBadge"></div>
+
+<!-- back button -->
+<button id="backBtn" title="Back to start">← Back</button>
+
+<canvas id="canvas"></canvas>
+
+<div id="topHud">
+  <div id="energyBox">ENERGY <span id="energyVal">—</span></div>
+  <div id="modeLabel">Spectrum</div>
+</div>
+
+<!-- Fullscreen button (fixed top-right, above VU meters) -->
+<button id="fsBtn" title="Enter Fullscreen">
+  <svg id="fsIcon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+    <path id="fsPath" d="M3 3h6v2H5v4H3V3zm12 0h6v6h-2V5h-4V3zM3 15h2v4h4v2H3v-6zm16 4h-4v2h6v-6h-2v4z"/>
+  </svg>
+  <span id="fsLabel">Fullscreen</span>
+</button>
+
+<div id="panel">
+  <div id="presetRow"></div>
+  <div class="rowLabel">Color Theme</div>
+  <div id="colorRow"></div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════
+// COLOR THEMES
+// Each theme: { name, hueBase, hueRange, sat, lit, bg, accent[] }
+// accent[] = array of CSS colors used for particles, DNA strands, etc.
+// hueBase/hueRange drive the hue-cycling: hue = (hueBase + t * speed + i * spread) % 360
+// For "rainbow" mode hueBase=-1 means full cycle
+// ═══════════════════════════════════════════════════════════════
+const THEMES = [
+  {
+    id:'rainbow', name:'Rainbow',
+    swatch:'linear-gradient(90deg,#f00,#ff0,#0f0,#0ff,#00f,#f0f)',
+    hueBase:-1, hueRange:360, sat:100, lit:65, bg:'#080810',
+    accent:['#ff2f8e','#7b2fff','#2fffcb','#ff8c2f','#fff020','#20c0ff'],
+    dna:[280,160],
+  },
+  {
+    id:'neon', name:'Neon',
+    swatch:'linear-gradient(90deg,#f0f,#0ff)',
+    hueBase:270, hueRange:120, sat:100, lit:68, bg:'#05000f',
+    accent:['#ff00ff','#cc00ff','#00ffff','#ff00cc','#9900ff','#00ccff'],
+    dna:[300,180],
+  },
+  {
+    id:'fire', name:'Fire',
+    swatch:'linear-gradient(90deg,#ff0,#f80,#f00)',
+    hueBase:0, hueRange:55, sat:100, lit:60, bg:'#100400',
+    accent:['#ff4400','#ff8800','#ffcc00','#ff2200','#ffaa00','#ff6600'],
+    dna:[20,45],
+  },
+  {
+    id:'ice', name:'Ice',
+    swatch:'linear-gradient(90deg,#8ff,#04f)',
+    hueBase:190, hueRange:60, sat:90, lit:72, bg:'#000810',
+    accent:['#00ccff','#0088ff','#aaeeff','#0044cc','#66ddff','#0066ee'],
+    dna:[200,220],
+  },
+  {
+    id:'acid', name:'Acid',
+    swatch:'linear-gradient(90deg,#0f0,#ff0,#0ff)',
+    hueBase:80, hueRange:80, sat:100, lit:65, bg:'#010801',
+    accent:['#00ff44','#ccff00','#00ffcc','#88ff00','#00ff88','#aaff22'],
+    dna:[100,160],
+  },
+  {
+    id:'sunset', name:'Sunset',
+    swatch:'linear-gradient(90deg,#f04,#f80,#40f)',
+    hueBase:300, hueRange:120, sat:95, lit:62, bg:'#080008',
+    accent:['#ff0055','#ff6600','#cc0088','#ff3300','#ff00aa','#ff4400'],
+    dna:[330,20],
+  },
+  {
+    id:'mono', name:'Mono',
+    swatch:'linear-gradient(90deg,#fff,#888)',
+    hueBase:220, hueRange:0, sat:15, lit:75, bg:'#080808',
+    accent:['#ffffff','#cccccc','#aaaaaa','#888888','#dddddd','#999999'],
+    dna:[220,220],
+  },
+  {
+    id:'void', name:'Void',
+    swatch:'linear-gradient(90deg,#604,#028,#604)',
+    hueBase:260, hueRange:50, sat:80, lit:50, bg:'#020008',
+    accent:['#6600ff','#3300cc','#9900ff','#4400aa','#7722ff','#5500dd'],
+    dna:[260,280],
+  },
+  {
+    id:'tiedye', name:'Tie-Dye',
+    swatch:'linear-gradient(90deg,#f0a,#f60,#ff0,#0f8,#08f,#c0f)',
+    hueBase:-1, hueRange:360, sat:100, lit:62, bg:'#0a0608',
+    accent:['#ff00aa','#ff6600','#ffee00','#00ff88','#00aaff','#cc00ff'],
+    dna:[320, 60],
+    tiedye:true,   // flag so themeHue can use tighter spiral bands
+  },
+];
+
+let theme = THEMES[0]; // default = rainbow
+
+// helper: get hue from theme at position frac [0..1] and time
+function themeHue(frac, timeMul=30, spread=1){
+  if(theme.tiedye){
+    // Tie-dye: tight concentric hue bands that rotate fast
+    // Each "ring" shifts hue by ~60° — like the bull's-eye rings on real tie-dye
+    return (frac*420*spread + t*timeMul*1.4)%360;
+  }
+  if(theme.hueBase < 0) return (t*timeMul + frac*360*spread)%360;
+  return (theme.hueBase + frac*theme.hueRange*spread + t*timeMul*.3)%360;
+}
+function themeHsl(frac, timeMul, spread, alpha=1){
+  const h=themeHue(frac,timeMul,spread);
+  return `hsla(${h},${theme.sat}%,${theme.lit}%,${alpha})`;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// PRESETS
+// ═══════════════════════════════════════════════════════════════
+const PRESETS = [
+  {id:'spectrum',  label:'Spectrum'},
+  {id:'wave',      label:'Waveform'},
+  {id:'radial',    label:'Radial'},
+  {id:'particles', label:'Particles'},
+  {id:'tunnel',    label:'Tunnel'},
+  {id:'plasma',    label:'Plasma'},
+  {id:'starfield', label:'Starfield'},
+  {id:'lissajous', label:'Lissajous'},
+  {id:'blob',      label:'Blob'},
+  {id:'grid',      label:'Grid Warp'},
+  {id:'dna',       label:'DNA Helix'},
+  {id:'fractal',   label:'Fractal Zoom'},
+  {id:'scope',     label:'Oscilloscope'},
+  {id:'vu',        label:'VU Meters'},
+  {id:'vlm',       label:'VLM'},
+  {id:'techno',    label:'Techno'},
+  {id:'kaleido',   label:'Kaleidoscope'},
+  {id:'plexus',    label:'Plexus'},
+  {id:'auto',      label:'⟳ Auto Cycle', auto:true},
+];
+
+// ═══════════════════════════════════════════════════════════════
+// GLOBALS
+// ═══════════════════════════════════════════════════════════════
+const canvas    = document.getElementById('canvas');
+const ctx       = canvas.getContext('2d');
+const idle      = document.getElementById('idle');
+const panel     = document.getElementById('panel');
+const topHud    = document.getElementById('topHud');
+const modeLabel = document.getElementById('modeLabel');
+const energyVal = document.getElementById('energyVal');
+
+let analyser, freqData, timeData, bufferLen, audioCtx;
+let mode='spectrum', autoMode=false, autoTimer=0;
+const AUTO_INTERVAL=12;
+let W,H,t=0;
+
+let particles=[], stars=[];
+const MAX_P=400, MAX_STARS=600;
+let fractalPhase=0, dnaPhase=0, blobPhase=0, lissPhase=0, plasmaT=0;
+let fractalCanvas=null, fractalCtx2=null;
+let energy=0, bass=0, mid=0, treble=0;
+
+// ═══════════════════════════════════════════════════════════════
+// RESIZE
+// ═══════════════════════════════════════════════════════════════
+function resize(){
+  W=canvas.width=window.innerWidth;
+  H=canvas.height=window.innerHeight;
+  fractalCanvas=null;
+}
+window.addEventListener('resize',resize);
+resize();
+
+// ═══════════════════════════════════════════════════════════════
+// BUILD PRESET ROW
+// ═══════════════════════════════════════════════════════════════
+const presetRow=document.getElementById('presetRow');
+PRESETS.forEach(p=>{
+  const btn=document.createElement('button');
+  btn.className='pbtn'+(p.auto?' auto':'');
+  btn.textContent=p.label; btn.id='btn_'+p.id;
+  if(p.id==='spectrum') btn.classList.add('active');
+  btn.addEventListener('click',()=>selectPreset(p.id));
+  presetRow.appendChild(btn);
+});
+
+function selectPreset(id){
+  autoMode=(id==='auto');
+  if(!autoMode){mode=id;autoTimer=0;}
+  modeLabel.textContent=PRESETS.find(p=>p.id===id).label;
+  document.querySelectorAll('.pbtn').forEach(b=>b.classList.remove('active'));
+  document.getElementById('btn_'+id)?.classList.add('active');
+  if(id==='particles'||id==='auto') initParticles();
+  if(id==='starfield'||id==='auto') initStars();
+  if(id==='plexus'   ||id==='auto') initPlexus();
+}
+
+// ═══════════════════════════════════════════════════════════════
+// BUILD COLOR ROW
+// ═══════════════════════════════════════════════════════════════
+const colorRow=document.getElementById('colorRow');
+THEMES.forEach(th=>{
+  const btn=document.createElement('button');
+  btn.className='cbtn'; btn.id='cbtn_'+th.id;
+  const swatch=document.createElement('span');
+  swatch.className='cswatch';
+  swatch.style.background=th.swatch;
+  btn.appendChild(swatch);
+  btn.appendChild(document.createTextNode(th.name));
+  if(th.id==='rainbow') btn.classList.add('active');
+  btn.style.borderColor=th.id==='rainbow'?'rgba(255,255,255,.5)':'rgba(255,255,255,.13)';
+  btn.addEventListener('click',()=>selectTheme(th.id));
+  colorRow.appendChild(btn);
+});
+
+function selectTheme(id){
+  theme=THEMES.find(th=>th.id===id);
+  document.querySelectorAll('.cbtn').forEach(b=>{
+    b.classList.remove('active');
+    b.style.borderColor='rgba(255,255,255,.13)';
+    b.style.color='';
+  });
+  const active=document.getElementById('cbtn_'+id);
+  active.classList.add('active');
+  // tint active button with the theme swatch color
+  const accentCol=theme.accent[0];
+  active.style.borderColor=accentCol;
+  active.style.color=accentCol;
+  // reset fractal canvas so color bleeds in fresh
+  fractalCanvas=null;
+  scopePhosphor=null;
+  tcFbuf=null;
+  kaBuf=null;
+  // re-color particles/stars
+  initParticles(); initStars();
+}
+
+// ═══════════════════════════════════════════════════════════════
+// START — shared audio init for both mic and system audio
+// ═══════════════════════════════════════════════════════════════
+async function startAudio(stream, sourceLabel){
+  audioCtx=new (window.AudioContext||window.webkitAudioContext)();
+  const source=audioCtx.createMediaStreamSource(stream);
+  analyser=audioCtx.createAnalyser();
+  analyser.fftSize=2048; analyser.smoothingTimeConstant=0.83;
+  source.connect(analyser);
+  bufferLen=analyser.frequencyBinCount;
+  freqData=new Uint8Array(bufferLen);
+  timeData=new Uint8Array(bufferLen);
+  idle.classList.add('hidden');
+  panel.classList.add('visible');
+  topHud.classList.add('visible');
+  // show source badge
+  const badge=document.getElementById('srcBadge');
+  badge.textContent='⬤ '+sourceLabel;
+  badge.style.color=sourceLabel.includes('Mic')?'var(--c1)':'var(--c3)';
+  badge.style.borderColor=sourceLabel.includes('Mic')?'var(--c1)':'var(--c3)';
+  badge.classList.add('visible');
+  initParticles(); initStars(); initPlexus();
+  loop();
+}
+
+// Microphone
+document.getElementById('startBtn').addEventListener('click',async()=>{
+  try{
+    const stream=await navigator.mediaDevices.getUserMedia({audio:true,video:false});
+    await startAudio(stream,'Mic Input');
+  }catch(e){alert('Microphone access denied:\n'+e.message);}
+});
+
+// System Audio (tab capture via getDisplayMedia)
+document.getElementById('sysAudioBtn').addEventListener('click',async()=>{
+  if(!navigator.mediaDevices.getDisplayMedia){
+    alert('System Audio capture is not supported in this browser.\n\nTry Chrome or Edge, and make sure you are on a secure (https) page.');
+    return;
+  }
+  try{
+    // Request screen capture — user must check "Share tab audio" in the dialog
+    const stream=await navigator.mediaDevices.getDisplayMedia({
+      video:true,   // required by spec even though we discard the video track
+      audio:{
+        echoCancellation:false,
+        noiseSuppression:false,
+        sampleRate:44100,
+      }
+    });
+    // Drop video tracks — we only care about audio
+    stream.getVideoTracks().forEach(t=>t.stop());
+    if(stream.getAudioTracks().length===0){
+      alert('No audio track found.\n\nMake sure you checked "Share tab audio" (or "Share system audio") in the browser dialog when selecting a tab.');
+      return;
+    }
+    await startAudio(stream,'Tab Audio');
+  }catch(e){
+    if(e.name==='NotAllowedError'||e.name==='AbortError') return; // user cancelled
+    alert('System audio capture failed:\n'+e.message);
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════
+// ENERGY
+// ═══════════════════════════════════════════════════════════════
+function computeFreqs(){
+  analyser.getByteFrequencyData(freqData);
+  analyser.getByteTimeDomainData(timeData);
+  const bEnd=Math.floor(bufferLen*.1),mEnd=Math.floor(bufferLen*.45);
+  let bs=0,ms=0,tr=0,tot=0;
+  for(let i=0;i<bufferLen;i++){
+    const v=freqData[i]; tot+=v;
+    if(i<bEnd) bs+=v; else if(i<mEnd) ms+=v; else tr+=v;
+  }
+  energy=tot/(bufferLen*255);
+  bass=bs/(bEnd*255);
+  mid=ms/((mEnd-bEnd)*255);
+  treble=tr/((bufferLen-mEnd)*255);
+  energyVal.textContent=(energy*100)|0;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// MAIN LOOP
+// ═══════════════════════════════════════════════════════════════
+function loop(){
+  requestAnimationFrame(loop);
+  if(!analyser) return;
+  computeFreqs();
+  t+=0.016;
+
+  if(autoMode){
+    autoTimer+=0.016;
+    if(autoTimer>=AUTO_INTERVAL){
+      autoTimer=0;
+      const real=PRESETS.filter(p=>!p.auto);
+      const cur=real.findIndex(p=>p.id===mode);
+      const next=real[(cur+1)%real.length];
+      mode=next.id;
+      modeLabel.textContent=next.label;
+      if(mode==='particles') initParticles();
+      if(mode==='starfield') initStars();
+    }
+  }
+
+  const fadeAlpha=mode==='tunnel'||mode==='fractal'||mode==='plasma'?0.18:
+                  mode==='scope'?0.28:
+                  mode==='vlm'||mode==='techno'||mode==='kaleido'?0.10:0.35;
+  if(mode!=='techno' && mode!=='kaleido'){
+    ctx.fillStyle=`rgba(8,8,16,${fadeAlpha})`;
+    ctx.fillRect(0,0,W,H);
+  }
+
+  switch(mode){
+    case 'spectrum':  drawSpectrum();  break;
+    case 'wave':      drawWave();      break;
+    case 'radial':    drawRadial();    break;
+    case 'particles': drawParticles(); break;
+    case 'tunnel':    drawTunnel();    break;
+    case 'plasma':    drawPlasma();    break;
+    case 'starfield': drawStarfield(); break;
+    case 'lissajous': drawLissajous(); break;
+    case 'blob':      drawBlob();      break;
+    case 'grid':      drawGrid();      break;
+    case 'dna':       drawDNA();       break;
+    case 'fractal':   drawFractal();   break;
+    case 'scope':     drawScope();       break;
+    case 'vu':        window.drawVU();   break;
+    case 'vlm':       drawVLM();         break;
+    case 'techno':    drawTechno();      break;
+    case 'kaleido':   drawKaleido();     break;
+    case 'plexus':    drawPlexus();      break;
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// 1. SPECTRUM
+// ═══════════════════════════════════════════════════════════════
+function drawSpectrum(){
+  const bars=120;
+  const usedBins=Math.floor(bufferLen*0.5); // use only lower half of spectrum
+  const barW=W/bars, step=Math.floor(usedBins/bars);
+  for(let i=0;i<bars;i++){
+    let v=0; for(let j=0;j<step;j++) v+=freqData[i*step+j]; v/=step;
+    const n=v/255,bh=n*H*.78,frac=i/bars;
+    const hue=themeHue(frac,30,1);
+    ctx.shadowBlur=14+n*20; ctx.shadowColor=`hsl(${hue},${theme.sat}%,${theme.lit}%)`;
+    const g=ctx.createLinearGradient(0,H-bh,0,H);
+    g.addColorStop(0,`hsla(${hue},${theme.sat}%,${theme.lit}%,.95)`);
+    g.addColorStop(1,`hsla(${hue},${theme.sat}%,${theme.lit*.6}%,.3)`);
+    ctx.fillStyle=g;
+    ctx.fillRect(i*barW+1,H-bh,barW-2,bh);
+    ctx.fillStyle=`hsla(${hue},${theme.sat}%,85%,.8)`;
+    ctx.fillRect(i*barW+1,H-bh-3,barW-2,2);
+  }
+  ctx.shadowBlur=0;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// 2. WAVEFORM
+// ═══════════════════════════════════════════════════════════════
+function drawWave(){
+  const step=W/bufferLen;
+  for(let l=0;l<4;l++){
+    const frac=l/4, hue=themeHue(frac,20,1);
+    const alpha=1-l*.2, yw=l*.04*H, lw=2.2-l*.35;
+    ctx.beginPath();
+    ctx.strokeStyle=`hsla(${hue},${theme.sat}%,${theme.lit}%,${alpha})`;
+    ctx.lineWidth=lw;
+    ctx.shadowBlur=18+energy*18; ctx.shadowColor=`hsl(${hue},${theme.sat}%,${theme.lit}%)`;
+    for(let i=0;i<bufferLen;i++){
+      const v=timeData[i]/128-1;
+      const x=i*step, y=H/2+v*H*(.36+l*.04)+yw*(l%2?1:-1);
+      i===0?ctx.moveTo(x,y):ctx.lineTo(x,y);
+    }
+    ctx.stroke();
+  }
+  ctx.shadowBlur=0;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// 3. RADIAL
+// ═══════════════════════════════════════════════════════════════
+function drawRadial(){
+  const cx=W/2,cy=H/2,base=Math.min(W,H)*.22,bars=200,step=Math.floor(bufferLen/bars);
+  for(let i=0;i<bars;i++){
+    let v=0; for(let j=0;j<step;j++) v+=freqData[i*step+j]; v/=step;
+    const n=v/255,ang=(i/bars)*Math.PI*2-Math.PI/2;
+    const r2=base+n*Math.min(W,H)*.32, frac=i/bars;
+    const hue=themeHue(frac,25,1);
+    ctx.strokeStyle=`hsla(${hue},${theme.sat}%,${theme.lit}%,.9)`;
+    ctx.lineWidth=2; ctx.shadowBlur=8+n*18; ctx.shadowColor=`hsl(${hue},${theme.sat}%,${theme.lit}%)`;
+    ctx.beginPath();
+    ctx.moveTo(cx+Math.cos(ang)*base,cy+Math.sin(ang)*base);
+    ctx.lineTo(cx+Math.cos(ang)*r2,cy+Math.sin(ang)*r2);
+    ctx.stroke();
+  }
+  ctx.beginPath();
+  for(let i=0;i<=360;i++){
+    const ang=(i/360)*Math.PI*2-Math.PI/2;
+    const idx=Math.floor((i/360)*bufferLen);
+    const rv=base*.7+(timeData[idx]/128-1)*base*.5;
+    const x=cx+Math.cos(ang)*rv,y=cy+Math.sin(ang)*rv;
+    i===0?ctx.moveTo(x,y):ctx.lineTo(x,y);
+  }
+  ctx.closePath();
+  const ringHue=themeHue(.5,20,1);
+  ctx.strokeStyle=`hsla(${ringHue},${theme.sat}%,${theme.lit}%,${.5+energy*.4})`;
+  ctx.lineWidth=1.5; ctx.shadowBlur=14; ctx.shadowColor=`hsl(${ringHue},${theme.sat}%,${theme.lit}%)`;
+  ctx.stroke(); ctx.shadowBlur=0;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// 4. PARTICLES
+// ═══════════════════════════════════════════════════════════════
+function initParticles(){
+  particles=Array.from({length:MAX_P},()=>mkParticle(true));
+}
+function mkParticle(rand){
+  const ang=Math.random()*Math.PI*2;
+  const col=theme.accent[Math.floor(Math.random()*theme.accent.length)];
+  return{
+    x:W/2+(rand?Math.cos(ang)*Math.random()*Math.min(W,H)*.4:0),
+    y:H/2+(rand?Math.sin(ang)*Math.random()*Math.min(W,H)*.4:0),
+    vx:(Math.random()-.5)*1.4,vy:(Math.random()-.5)*1.4,
+    life:Math.random(),maxLife:.5+Math.random()*.5,
+    size:1.5+Math.random()*3.5,color:col,
+    freq:Math.floor(Math.random()*bufferLen*.65),ang,
+  };
+}
+function drawParticles(){
+  for(let i=0;i<particles.length;i++){
+    const p=particles[i];
+    const fv=freqData[p.freq]/255, boost=1+fv*5*energy;
+    p.x+=p.vx*boost; p.y+=p.vy*boost;
+    p.life-=.007+fv*.016;
+    if(p.life<=0||p.x<-20||p.x>W+20||p.y<-20||p.y>H+20){
+      const np=mkParticle(false);
+      np.x=W/2+(Math.random()-.5)*70; np.y=H/2+(Math.random()-.5)*70;
+      const spd=.8+fv*4;
+      np.vx=Math.cos(np.ang)*spd; np.vy=Math.sin(np.ang)*spd;
+      particles[i]=np; continue;
+    }
+    const alpha=Math.max(0,p.life/p.maxLife);
+    ctx.globalAlpha=alpha; ctx.shadowBlur=5+fv*16; ctx.shadowColor=p.color;
+    ctx.fillStyle=p.color;
+    ctx.beginPath(); ctx.arc(p.x,p.y,p.size*(0.5+fv),0,Math.PI*2); ctx.fill();
+  }
+  ctx.globalAlpha=1; ctx.shadowBlur=0;
+  const haloHue=themeHue(.6,20,1);
+  const hr=Math.min(W,H)*.13+energy*Math.min(W,H)*.09;
+  ctx.beginPath(); ctx.arc(W/2,H/2,hr,0,Math.PI*2);
+  ctx.strokeStyle=`hsla(${haloHue},${theme.sat}%,${theme.lit}%,${.2+energy*.35})`;
+  ctx.lineWidth=2; ctx.shadowBlur=22; ctx.shadowColor=`hsl(${haloHue},${theme.sat}%,${theme.lit}%)`;
+  ctx.stroke(); ctx.shadowBlur=0;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// 5. TUNNEL
+// ═══════════════════════════════════════════════════════════════
+function drawTunnel(){
+  const cx=W/2,cy=H/2,maxR=Math.max(W,H)*.85,rings=22;
+  const speed=t*(.6+bass*2.5);
+  for(let r=rings;r>0;r--){
+    const frac=r/rings,radius=maxR*frac;
+    const hue=themeHue(frac,40,1);
+    const bv=freqData[Math.floor(frac*bufferLen*.8)]/255;
+    ctx.beginPath(); ctx.arc(cx,cy,radius*(1+bass*.15),0,Math.PI*2);
+    ctx.strokeStyle=`hsla(${hue},${theme.sat}%,${theme.lit}%,${(.15+bv*.5)*frac})`;
+    ctx.lineWidth=1.5+bv*6; ctx.shadowBlur=8+bv*20; ctx.shadowColor=`hsl(${hue},${theme.sat}%,${theme.lit}%)`;
+    ctx.stroke();
+  }
+  const spokes=12;
+  for(let s=0;s<spokes;s++){
+    const ang=s/spokes*Math.PI*2+t*.3;
+    const bv=freqData[Math.floor(s/spokes*bufferLen*.5)]/255;
+    const hue=themeHue(s/spokes,30,1);
+    ctx.beginPath(); ctx.moveTo(cx,cy);
+    ctx.lineTo(cx+Math.cos(ang)*maxR*(0.3+bv*.7),cy+Math.sin(ang)*maxR*(0.3+bv*.7));
+    ctx.strokeStyle=`hsla(${hue},${theme.sat}%,${theme.lit}%,.18)`;
+    ctx.lineWidth=1; ctx.shadowBlur=0; ctx.stroke();
+  }
+  ctx.shadowBlur=0;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// 6. PLASMA
+// ═══════════════════════════════════════════════════════════════
+function drawPlasma(){
+  plasmaT+=.018+energy*.04;
+  const scale=3.5,cols=80,rows=50,cw=W/cols,ch=H/rows;
+  for(let y=0;y<rows;y++){
+    for(let x=0;x<cols;x++){
+      const nx=x/cols,ny=y/rows;
+      const freqIdx=Math.floor((x/cols)*bufferLen*.7);
+      const bright=35+freqData[freqIdx]/255*45;
+      let hue;
+      if(theme.tiedye){
+        // Tie-dye plasma: concentric bull's-eye rings from centre
+        // Distance from centre drives the hue band, audio warps the rings
+        const dx=nx-0.5, dy=ny-0.5;
+        const dist=Math.sqrt(dx*dx+dy*dy);
+        const fv=freqData[freqIdx]/255;
+        const warp=Math.sin(dist*14+plasmaT*1.2)*0.06*fv
+                  +Math.sin(Math.atan2(dy,dx)*3+plasmaT)*0.04*fv;
+        hue=((dist+warp)*520+plasmaT*40+bass*60)%360;
+      } else {
+        const v=Math.sin(nx*scale+plasmaT)+Math.sin(ny*scale+plasmaT*1.3)
+               +Math.sin((nx+ny)*scale*.7+plasmaT*.8)
+               +Math.sin(Math.sqrt((nx-.5)**2+(ny-.5)**2)*scale*2+plasmaT*1.6);
+        hue=theme.hueBase<0
+          ? (v*90+plasmaT*30+bass*80)%360
+          : (theme.hueBase + (v+2)/4*theme.hueRange)%360;
+      }
+      ctx.fillStyle=`hsl(${hue},${theme.sat}%,${bright}%)`;
+      ctx.fillRect(x*cw,y*ch,cw+1,ch+1);
+    }
+  }
+  for(let y=0;y<H;y+=3){ctx.fillStyle='rgba(0,0,0,.18)';ctx.fillRect(0,y,W,1);}
+}
+
+// ═══════════════════════════════════════════════════════════════
+// 7. STARFIELD
+// ═══════════════════════════════════════════════════════════════
+function initStars(){
+  stars=Array.from({length:MAX_STARS},()=>mkStar(true));
+}
+function mkStar(rand){
+  const col=theme.accent[Math.floor(Math.random()*theme.accent.length)];
+  return{x:(Math.random()-.5)*W*2,y:(Math.random()-.5)*H*2,z:rand?Math.random()*W:W,pz:0,color:col,freq:Math.floor(Math.random()*bufferLen*.6)};
+}
+function drawStarfield(){
+  const cx=W/2,cy=H/2,speed=1.5+bass*12+energy*4;
+  for(let i=0;i<stars.length;i++){
+    const s=stars[i];
+    s.pz=s.z; s.z-=speed;
+    if(s.z<=0){stars[i]=mkStar(false);continue;}
+    const sx=cx+(s.x/s.z)*W*.5,sy=cy+(s.y/s.z)*H*.5;
+    const px=cx+(s.x/s.pz)*W*.5,py=cy+(s.y/s.pz)*H*.5;
+    const size=Math.max(.3,(1-s.z/W)*3.5);
+    const fv=freqData[s.freq]/255;
+    ctx.strokeStyle=s.color; ctx.lineWidth=size*(1+fv);
+    ctx.shadowBlur=3+fv*10; ctx.shadowColor=s.color;
+    ctx.globalAlpha=.6+fv*.4;
+    ctx.beginPath(); ctx.moveTo(px,py); ctx.lineTo(sx,sy); ctx.stroke();
+  }
+  ctx.globalAlpha=1; ctx.shadowBlur=0;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// 8. LISSAJOUS
+// ═══════════════════════════════════════════════════════════════
+function drawLissajous(){
+  lissPhase+=.008+energy*.02;
+  const cx=W/2,cy=H/2,rx=W*.38,ry=H*.38,steps=1400;
+  ctx.beginPath();
+  for(let i=0;i<steps;i++){
+    const frac=i/steps,idx=Math.floor(frac*bufferLen);
+    const tv=timeData[idx]/128-1,fv=freqData[Math.floor(frac*bufferLen*.8)]/255;
+    const a=3+Math.floor(bass*3),b=2+Math.floor(mid*2);
+    const x=cx+Math.sin(a*frac*Math.PI*2+lissPhase+tv*.3)*rx*(0.7+fv*.4);
+    const y=cy+Math.sin(b*frac*Math.PI*2)*ry*(0.7+tv*.3);
+    i===0?ctx.moveTo(x,y):ctx.lineTo(x,y);
+  }
+  const hue=themeHue(0,25,1);
+  ctx.strokeStyle=`hsla(${hue},${theme.sat}%,${theme.lit}%,.75)`;
+  ctx.lineWidth=1.2; ctx.shadowBlur=12+energy*16; ctx.shadowColor=`hsl(${hue},${theme.sat}%,${theme.lit}%)`;
+  ctx.stroke(); ctx.shadowBlur=0;
+
+  ctx.beginPath();
+  for(let i=0;i<steps;i++){
+    const frac=i/steps,idx=Math.floor(frac*bufferLen);
+    const tv=timeData[idx]/128-1;
+    const x=cx+Math.sin(5*frac*Math.PI*2+lissPhase*.7)*rx*.55;
+    const y=cy+Math.cos(4*frac*Math.PI*2)*ry*.55*(1+tv*.2);
+    i===0?ctx.moveTo(x,y):ctx.lineTo(x,y);
+  }
+  const hue2=themeHue(.33,25,1);
+  ctx.strokeStyle=`hsla(${hue2},${theme.sat}%,${theme.lit}%,.3)`;
+  ctx.lineWidth=.8; ctx.stroke();
+}
+
+// ═══════════════════════════════════════════════════════════════
+// 9. BLOB
+// ═══════════════════════════════════════════════════════════════
+function drawBlob(){
+  blobPhase+=.014+energy*.025;
+  const cx=W/2,cy=H/2,base=Math.min(W,H)*.28,pts=180;
+  ctx.beginPath();
+  for(let i=0;i<=pts;i++){
+    const ang=i/pts*Math.PI*2,fi=Math.floor(i/pts*bufferLen*.7);
+    const fv=freqData[fi]/255;
+    const noise=Math.sin(ang*3+blobPhase)*.12+Math.sin(ang*5+blobPhase*1.3)*.08+Math.sin(ang*7+blobPhase*.7)*.05;
+    const r=base*(0.7+fv*.8+noise);
+    const x=cx+Math.cos(ang)*r,y=cy+Math.sin(ang)*r;
+    i===0?ctx.moveTo(x,y):ctx.lineTo(x,y);
+  }
+  ctx.closePath();
+  const hue=themeHue(0,20,1),hue2=themeHue(.33,20,1),hue3=themeHue(.66,20,1);
+  const grd=ctx.createRadialGradient(cx,cy,0,cx,cy,base*1.6);
+  grd.addColorStop(0,`hsla(${hue},${theme.sat}%,${theme.lit}%,.35)`);
+  grd.addColorStop(.5,`hsla(${hue2},${theme.sat}%,${theme.lit*.8}%,.2)`);
+  grd.addColorStop(1,`hsla(${hue3},${theme.sat}%,${theme.lit*.6}%,0)`);
+  ctx.fillStyle=grd; ctx.fill();
+  ctx.strokeStyle=`hsla(${hue},${theme.sat}%,${theme.lit}%,${.5+bass*.4})`;
+  ctx.lineWidth=2; ctx.shadowBlur=20+bass*30; ctx.shadowColor=`hsl(${hue},${theme.sat}%,${theme.lit}%)`;
+  ctx.stroke();
+  ctx.beginPath(); ctx.arc(cx,cy,base*(.15+bass*.25),0,Math.PI*2);
+  const coreHue=themeHue(.5,20,1);
+  ctx.fillStyle=`hsla(${coreHue},${theme.sat}%,${theme.lit}%,${.3+bass*.5})`;
+  ctx.shadowBlur=30+bass*40; ctx.fill(); ctx.shadowBlur=0;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// 10. GRID WARP
+// ═══════════════════════════════════════════════════════════════
+function drawGrid(){
+  const cols=28,rows=18,cw=W/cols,ch=H/rows;
+  ctx.lineWidth=.8;
+  for(let r=0;r<=rows;r++){
+    ctx.beginPath();
+    for(let c=0;c<=cols;c++){
+      const fi=Math.floor(c/cols*bufferLen*.7),fv=freqData[fi]/255;
+      const tv=timeData[Math.floor(c/cols*bufferLen)]/128-1;
+      const warp=(Math.sin(c*.4+t*1.2+r*.5)*.5+tv*.3)*fv*60*(1+bass*2);
+      c===0?ctx.moveTo(c*cw,r*ch+warp):ctx.lineTo(c*cw,r*ch+warp);
+    }
+    const hue=themeHue(r/rows,30,.8);
+    ctx.strokeStyle=`hsla(${hue},${theme.sat}%,${theme.lit}%,${.3+mid*.5})`;
+    ctx.shadowBlur=4+mid*10; ctx.shadowColor=`hsl(${hue},${theme.sat}%,${theme.lit}%)`; ctx.stroke();
+  }
+  for(let c=0;c<=cols;c++){
+    ctx.beginPath();
+    for(let r=0;r<=rows;r++){
+      const fi=Math.floor(r/rows*bufferLen*.7),fv=freqData[fi]/255;
+      const tv=timeData[Math.floor(r/rows*bufferLen)]/128-1;
+      const warp=(Math.sin(r*.5+t+c*.4)*.5+tv*.3)*fv*60*(1+bass*2);
+      r===0?ctx.moveTo(c*cw+warp,r*ch):ctx.lineTo(c*cw+warp,r*ch);
+    }
+    const hue=themeHue(c/cols,30,.8);
+    ctx.strokeStyle=`hsla(${hue},${theme.sat}%,${theme.lit}%,${.25+treble*.4})`; ctx.stroke();
+  }
+  ctx.shadowBlur=0;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// 11. DNA HELIX
+// ═══════════════════════════════════════════════════════════════
+function drawDNA(){
+  dnaPhase+=.022+energy*.04;
+  const cx=W/2,pts=120,spread=H*.8,rx=Math.min(W,H)*.22;
+  const [h1,h2]=theme.dna;
+  for(let strand=0;strand<2;strand++){
+    ctx.beginPath();
+    for(let i=0;i<=pts;i++){
+      const frac=i/pts,fi=Math.floor(frac*bufferLen*.8);
+      const fv=freqData[fi]/255,ang=(frac*Math.PI*6+dnaPhase)+(strand*Math.PI);
+      const x=cx+Math.cos(ang)*rx*(0.6+fv*.6),y=H*.1+frac*spread;
+      i===0?ctx.moveTo(x,y):ctx.lineTo(x,y);
+    }
+    // use theme dna hues, but shift with time for rainbow mode
+    const sh=theme.hueBase<0?(strand===0?t*20%360:(t*20+180)%360):(strand===0?h1:h2);
+    ctx.strokeStyle=`hsla(${sh},${theme.sat}%,${theme.lit}%,.85)`;
+    ctx.lineWidth=2.5; ctx.shadowBlur=12+energy*16; ctx.shadowColor=`hsl(${sh},${theme.sat}%,${theme.lit}%)`;
+    ctx.stroke();
+  }
+  const rungs=30;
+  for(let i=0;i<rungs;i++){
+    const frac=i/rungs,fi=Math.floor(frac*bufferLen*.8),fv=freqData[fi]/255;
+    const ang=(frac*Math.PI*6+dnaPhase);
+    const x1=cx+Math.cos(ang)*rx*(0.6+fv*.6),x2=cx+Math.cos(ang+Math.PI)*rx*(0.6+fv*.6);
+    const y=H*.1+frac*spread;
+    const rungHue=themeHue(frac,40,1);
+    ctx.beginPath(); ctx.moveTo(x1,y); ctx.lineTo(x2,y);
+    ctx.strokeStyle=`hsla(${rungHue},${theme.sat}%,${theme.lit}%,${.4+fv*.5})`;
+    ctx.lineWidth=1.5; ctx.shadowBlur=6+fv*12; ctx.shadowColor=`hsl(${rungHue},${theme.sat}%,${theme.lit}%)`; ctx.stroke();
+    const dot1Hue=theme.hueBase<0?h1:h1,dot2Hue=theme.hueBase<0?h2:h2;
+    ctx.beginPath(); ctx.arc(x1,y,2+fv*3,0,Math.PI*2);
+    ctx.fillStyle=`hsla(${dot1Hue},${theme.sat}%,${theme.lit}%,1)`; ctx.shadowBlur=8; ctx.fill();
+    ctx.beginPath(); ctx.arc(x2,y,2+fv*3,0,Math.PI*2);
+    ctx.fillStyle=`hsla(${dot2Hue},${theme.sat}%,${theme.lit}%,1)`; ctx.fill();
+  }
+  ctx.shadowBlur=0;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// 12. FRACTAL ZOOM
+// ═══════════════════════════════════════════════════════════════
+function drawFractal(){
+  fractalPhase+=.008+energy*.018;
+  if(!fractalCanvas||fractalCanvas.width!==W){
+    fractalCanvas=document.createElement('canvas');
+    fractalCanvas.width=W; fractalCanvas.height=H;
+    fractalCtx2=fractalCanvas.getContext('2d');
+    fractalCtx2.fillStyle=theme.bg; fractalCtx2.fillRect(0,0,W,H);
+  }
+  const scale=1.012+bass*.04,rot=.004+energy*.012;
+  const ox=Math.sin(fractalPhase*.7)*W*.02,oy=Math.cos(fractalPhase*.5)*H*.02;
+  fractalCtx2.save();
+  fractalCtx2.globalAlpha=.92;
+  fractalCtx2.translate(W/2+ox,H/2+oy);
+  fractalCtx2.rotate(rot); fractalCtx2.scale(scale,scale);
+  fractalCtx2.drawImage(fractalCanvas,-W/2,-H/2);
+  fractalCtx2.restore();
+  fractalCtx2.globalAlpha=.06; fractalCtx2.fillStyle=theme.bg;
+  fractalCtx2.fillRect(0,0,W,H); fractalCtx2.globalAlpha=1;
+
+  const cx=W/2,cy=H/2,bars=64,step=Math.floor(bufferLen/bars);
+  for(let i=0;i<bars;i++){
+    let v=0; for(let j=0;j<step;j++) v+=freqData[i*step+j]; v/=step;
+    const n=v/255,ang=(i/bars)*Math.PI*2+fractalPhase*.5;
+    const r1=Math.min(W,H)*.05,r2=r1+n*Math.min(W,H)*.2;
+    const hue=themeHue(i/bars,40,1);
+    fractalCtx2.strokeStyle=`hsla(${hue},${theme.sat}%,${theme.lit}%,${.6+n*.4})`;
+    fractalCtx2.lineWidth=1.5+n*3;
+    fractalCtx2.shadowBlur=8+n*16; fractalCtx2.shadowColor=`hsl(${hue},${theme.sat}%,${theme.lit}%)`;
+    fractalCtx2.beginPath();
+    fractalCtx2.moveTo(cx+Math.cos(ang)*r1,cy+Math.sin(ang)*r1);
+    fractalCtx2.lineTo(cx+Math.cos(ang)*r2,cy+Math.sin(ang)*r2);
+    fractalCtx2.stroke();
+  }
+  fractalCtx2.shadowBlur=0;
+  ctx.drawImage(fractalCanvas,0,0);
+}
+
+// ═══════════════════════════════════════════════════════════════
+// 13. OSCILLOSCOPE — CRT phosphor-glow triggered sweep
+// ═══════════════════════════════════════════════════════════════
+let scopePhosphor = null; // offscreen canvas for phosphor persistence
+let scopeCtx2     = null;
+
+// ═══════════════════════════════════════════════════════════════
+// VLM — Virtual Light Machine (Atari Jaguar inspired)
+// Kaleidoscopic mirrored geometry, palette cycling, beat morphing
+// ═══════════════════════════════════════════════════════════════
+let vlmPhase=0, vlmShapeIdx=0, vlmShapeTimer=0, vlmPalIdx=0, vlmPalTimer=0;
+let vlmBeatFlash=0, vlmMirrors=8, vlmMorphT=0;
+
+// VLM palettes — override theme for the authentic VLM look
+const VLM_PALS=[
+  // each: [h1,h2,h3]  hue triplets
+  [0,  40, 60 ], // fire
+  [180,220,260], // ocean
+  [280,320,360], // violet-pink
+  [80, 120,160], // acid-teal
+  [30, 60, 90 ], // amber-gold
+  [200,240,280], // blue-purple
+];
+
+function drawVLM(){
+  vlmPhase += 0.018 + energy*0.04 + bass*0.06;
+  vlmMorphT += 0.008 + energy*0.012;
+
+  // ── beat-triggered shape & palette change ──────────────────
+  vlmBeatFlash = Math.max(0, vlmBeatFlash - 0.04);
+  if(bass>0.55 && vlmBeatFlash<0.05){
+    vlmBeatFlash=1;
+    vlmShapeTimer++;
+    if(vlmShapeTimer%3===0) vlmShapeIdx=(vlmShapeIdx+1)%6;
+    vlmPalTimer++;
+    if(vlmPalTimer%5===0) vlmPalIdx=(vlmPalIdx+1)%VLM_PALS.length;
+    // randomise mirror count on strong beats
+    if(bass>0.7) vlmMirrors=[4,6,8,12][Math.floor(Math.random()*4)];
+  }
+
+  const cx=W/2, cy=H/2;
+  const R=Math.min(W,H)*0.46;
+  const pal=VLM_PALS[vlmPalIdx];
+  const nextPal=VLM_PALS[(vlmPalIdx+1)%VLM_PALS.length];
+  const pm=vlmPalTimer%1; // 0-based palette morph fraction (always 0 here, but kept for extension)
+
+  // helper: get VLM hue blended between current & theme
+  function vlmHue(frac, freqFrac=0){
+    if(theme.hueBase<0){
+      // rainbow mode: use VLM palette hues + time
+      const ph=pal[Math.floor(frac*3)%3];
+      return (ph + t*25 + freqFrac*180)%360;
+    }
+    return themeHue(frac,20,1);
+  }
+
+  // ── draw kaleidoscope slices ─────────────────────────────────
+  // We render a single slice to an offscreen buffer then stamp it
+  // rotated vlmMirrors times, alternating mirror-flip
+  ctx.save();
+  ctx.translate(cx,cy);
+
+  const sliceAngle=(Math.PI*2)/vlmMirrors;
+
+  for(let m=0;m<vlmMirrors;m++){
+    ctx.save();
+    ctx.rotate(m*sliceAngle);
+    if(m%2===1){ ctx.scale(-1,1); ctx.rotate(-sliceAngle); } // mirror every other slice
+
+    // clip to this slice's wedge
+    ctx.beginPath();
+    ctx.moveTo(0,0);
+    ctx.arc(0,0,R*1.5,0,sliceAngle);
+    ctx.closePath();
+    ctx.clip();
+
+    // ── draw the shape(s) for this slice ────────────────────
+    drawVLMShape(R, vlmShapeIdx, pal, vlmHue);
+
+    ctx.restore();
+  }
+  ctx.restore();
+
+  // ── beat flash overlay ──────────────────────────────────────
+  if(vlmBeatFlash>0){
+    const h=vlmHue(0.5);
+    ctx.fillStyle=`hsla(${h},100%,80%,${vlmBeatFlash*0.12})`;
+    ctx.fillRect(0,0,W,H);
+  }
+
+  // ── centre bright core ──────────────────────────────────────
+  const coreR=R*(0.04+bass*0.12);
+  const cg=ctx.createRadialGradient(cx,cy,0,cx,cy,coreR*2.5);
+  const ch2=vlmHue(0.2);
+  cg.addColorStop(0,`hsla(${ch2},100%,95%,${0.6+bass*0.4})`);
+  cg.addColorStop(1,`hsla(${ch2},100%,60%,0)`);
+  ctx.fillStyle=cg;
+  ctx.beginPath(); ctx.arc(cx,cy,coreR*2.5,0,Math.PI*2); ctx.fill();
+}
+
+function drawVLMShape(R, shapeIdx, pal, vlmHue){
+  // Each shape is drawn from the centre outward within the clip wedge
+  // All shapes react to frequency bands and vlmPhase
+
+  const S=theme.sat, L=theme.lit;
+
+  // frequency samples along the spectrum for use in all shapes
+  const fSamples=Array.from({length:16},(_,i)=>freqData[Math.floor(i/16*bufferLen*0.9)]/255);
+
+  switch(shapeIdx){
+
+    case 0: { // MORPHING PETALS — rotating teardrop arcs
+      const petals=7+Math.floor(bass*4);
+      for(let p=0;p<petals;p++){
+        const frac=p/petals;
+        const fv=fSamples[Math.floor(frac*15)];
+        const ang=frac*Math.PI*2+vlmPhase*.4;
+        const rOuter=R*(0.3+fv*0.65);
+        const rInner=rOuter*0.35;
+        const hue=vlmHue(frac,fv);
+        ctx.shadowBlur=12+fv*20; ctx.shadowColor=`hsl(${hue},${S}%,${L}%)`;
+        ctx.strokeStyle=`hsla(${hue},${S}%,${L}%,${0.55+fv*0.4})`;
+        ctx.lineWidth=1.5+fv*3;
+        ctx.beginPath();
+        // bezier petal
+        const x1=Math.cos(ang)*rInner, y1=Math.sin(ang)*rInner;
+        const x2=Math.cos(ang)*rOuter, y2=Math.sin(ang)*rOuter;
+        const cp1x=Math.cos(ang+0.5)*rOuter*0.7, cp1y=Math.sin(ang+0.5)*rOuter*0.7;
+        const cp2x=Math.cos(ang-0.5)*rOuter*0.7, cp2y=Math.sin(ang-0.5)*rOuter*0.7;
+        ctx.moveTo(x1,y1);
+        ctx.bezierCurveTo(cp1x,cp1y,x2,y2,cp2x,cp2y);
+        ctx.bezierCurveTo(cp2x,cp2y,x1,y1,x1,y1);
+        const grd=ctx.createRadialGradient(x1,y1,0,x1,y1,rOuter);
+        grd.addColorStop(0,`hsla(${hue},${S}%,${L}%,0.4)`);
+        grd.addColorStop(1,`hsla(${(hue+40)%360},${S}%,${L}%,0)`);
+        ctx.fillStyle=grd; ctx.fill();
+        ctx.stroke();
+      }
+      break;
+    }
+
+    case 1: { // SPIRAL ARMS — logarithmic spiral with freq-modulated width
+      const arms=3+Math.floor(mid*3);
+      for(let a=0;a<arms;a++){
+        ctx.beginPath();
+        const armOff=a/arms*Math.PI*2;
+        for(let i=0;i<120;i++){
+          const frac=i/120;
+          const fi=Math.floor(frac*15);
+          const fv=fSamples[fi];
+          const r=R*frac*(0.4+fv*0.7);
+          const ang=frac*Math.PI*5 + vlmPhase + armOff;
+          const x=Math.cos(ang)*r, y=Math.sin(ang)*r;
+          i===0?ctx.moveTo(x,y):ctx.lineTo(x,y);
+        }
+        const hue=vlmHue(a/arms);
+        ctx.strokeStyle=`hsla(${hue},${S}%,${L}%,0.8)`;
+        ctx.lineWidth=1.8+energy*2;
+        ctx.shadowBlur=10+energy*18; ctx.shadowColor=`hsl(${hue},${S}%,${L}%)`;
+        ctx.stroke();
+      }
+      break;
+    }
+
+    case 2: { // FREQUENCY RIBBONS — stacked concentric arcs modulated by spectrum
+      const rings=18;
+      for(let r=0;r<rings;r++){
+        const frac=r/rings;
+        const fv=fSamples[Math.floor(frac*15)];
+        const baseR=R*(0.06+frac*0.9);
+        const hue=vlmHue(frac,fv);
+        ctx.beginPath();
+        // draw a partial arc that wobbles with freq
+        const arcStart=-Math.PI*0.1;
+        const arcEnd=Math.PI*0.6;
+        for(let i=0;i<=60;i++){
+          const af=i/60;
+          const ang=arcStart+(arcEnd-arcStart)*af;
+          const fi2=Math.floor(af*15);
+          const fv2=fSamples[fi2];
+          const rr=baseR*(0.85+fv2*0.35)+Math.sin(af*Math.PI*4+vlmPhase)*baseR*0.08*fv;
+          const x=Math.cos(ang)*rr, y=Math.sin(ang)*rr;
+          i===0?ctx.moveTo(x,y):ctx.lineTo(x,y);
+        }
+        ctx.strokeStyle=`hsla(${hue},${S}%,${L}%,${0.4+fv*0.55})`;
+        ctx.lineWidth=1+fv*4;
+        ctx.shadowBlur=6+fv*14; ctx.shadowColor=`hsl(${hue},${S}%,${L}%)`;
+        ctx.stroke();
+      }
+      break;
+    }
+
+    case 3: { // STARBURST — radial spikes with harmonic sub-spikes
+      const spikes=8+Math.floor(treble*8);
+      for(let s=0;s<spikes;s++){
+        const frac=s/spikes;
+        const fi=Math.floor(frac*15);
+        const fv=fSamples[fi];
+        const ang=frac*Math.PI*2+vlmPhase*.3;
+        const len=R*(0.2+fv*0.75);
+        const hue=vlmHue(frac,fv);
+        // main spike
+        ctx.beginPath();
+        ctx.moveTo(0,0);
+        ctx.lineTo(Math.cos(ang)*len, Math.sin(ang)*len);
+        ctx.strokeStyle=`hsla(${hue},${S}%,${L}%,${0.6+fv*0.4})`;
+        ctx.lineWidth=2+fv*4;
+        ctx.shadowBlur=10+fv*22; ctx.shadowColor=`hsl(${hue},${S}%,${L}%)`;
+        ctx.stroke();
+        // sub-spike at 1/3 length
+        const subLen=len*0.4;
+        const subAng=ang+0.25;
+        ctx.beginPath();
+        ctx.moveTo(Math.cos(ang)*len*0.35, Math.sin(ang)*len*0.35);
+        ctx.lineTo(Math.cos(subAng)*subLen, Math.sin(subAng)*subLen);
+        ctx.strokeStyle=`hsla(${(hue+60)%360},${S}%,${L}%,${0.4+fv*0.3})`;
+        ctx.lineWidth=1+fv*2; ctx.shadowBlur=6; ctx.stroke();
+      }
+      break;
+    }
+
+    case 4: { // TUNNEL RINGS — concentric ellipses that squeeze with bass
+      const rings=14;
+      for(let r=0;r<rings;r++){
+        const frac=r/rings;
+        const fi=Math.floor(frac*15);
+        const fv=fSamples[fi];
+        const rx2=R*(0.08+frac*0.88)*(0.9+bass*0.25);
+        const ry2=rx2*(0.55+mid*0.5+Math.sin(vlmPhase+frac*2)*0.12);
+        const hue=vlmHue(frac,fv);
+        const rot=vlmPhase*0.3*(frac<0.5?1:-1);
+        ctx.save();
+        ctx.rotate(rot);
+        ctx.beginPath();
+        ctx.ellipse(0,0,rx2,ry2,0,0,Math.PI*2);
+        ctx.strokeStyle=`hsla(${hue},${S}%,${L}%,${0.3+fv*0.6})`;
+        ctx.lineWidth=1.5+fv*3.5;
+        ctx.shadowBlur=8+fv*16; ctx.shadowColor=`hsl(${hue},${S}%,${L}%)`;
+        ctx.stroke();
+        ctx.restore();
+      }
+      break;
+    }
+
+    case 5: { // PLASMA WEB — bezier mesh connecting freq-driven nodes
+      const nodes=10;
+      const pts=Array.from({length:nodes},(_,i)=>{
+        const frac=i/nodes;
+        const fi=Math.floor(frac*15);
+        const fv=fSamples[fi];
+        const ang=frac*Math.PI*2+vlmPhase*.5;
+        const r=R*(0.25+fv*0.65);
+        return {x:Math.cos(ang)*r, y:Math.sin(ang)*r, fv, hue:vlmHue(frac,fv)};
+      });
+      // connect each node to its neighbours and skip-1 neighbour
+      for(let i=0;i<nodes;i++){
+        for(let skip=1;skip<=2;skip++){
+          const a=pts[i], b=pts[(i+skip)%nodes];
+          const blend=0.4;
+          const cpx=(a.x+b.x)*0.5 + Math.cos(vlmPhase+i)*R*0.2;
+          const cpy=(a.y+b.y)*0.5 + Math.sin(vlmPhase+i)*R*0.2;
+          const fv=(a.fv+b.fv)*0.5;
+          const hue=vlmHue(i/nodes,fv);
+          ctx.beginPath();
+          ctx.moveTo(a.x,a.y);
+          ctx.quadraticCurveTo(cpx,cpy,b.x,b.y);
+          ctx.strokeStyle=`hsla(${hue},${S}%,${L}%,${0.35+fv*0.5})`;
+          ctx.lineWidth=1+fv*2.5;
+          ctx.shadowBlur=8+fv*14; ctx.shadowColor=`hsl(${hue},${S}%,${L}%)`;
+          ctx.stroke();
+        }
+        // node dot
+        ctx.beginPath(); ctx.arc(pts[i].x,pts[i].y,2+pts[i].fv*5,0,Math.PI*2);
+        ctx.fillStyle=`hsl(${pts[i].hue},${S}%,${L}%)`;
+        ctx.shadowBlur=10; ctx.fill();
+      }
+      break;
+    }
+  }
+  ctx.shadowBlur=0;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// TECHNO — VLM trippy techno light show style
+// Full-screen color washes · geometric zoom collapse · strobe
+// feedback smear · inversion · rapid palette flash
+// ═══════════════════════════════════════════════════════════════
+let tcT=0;
+let tcFbuf=null, tcFctx=null; // feedback canvas
+let tcHue=0, tcHueTgt=0;
+let tcShape=0, tcBeatCount=0;
+let tcFlash=0, tcSpin=0;
+let tcZoom=1, tcZoomV=0;
+let tcPrevBass=0, tcInv=false;
+
+function tcHueGet(off=0){
+  if(theme.hueBase<0) return (tcHue+off+tcT*20)%360;
+  return (theme.hueBase+off+tcT*10)%360;
+}
+
+function drawTechno(){
+  tcT += 0.018 + energy*0.025;
+  tcSpin += 0.007 + bass*0.035 + mid*0.008;
+
+  // feedback buffer
+  if(!tcFbuf || tcFbuf.width!==W || tcFbuf.height!==H){
+    tcFbuf=document.createElement('canvas');
+    tcFbuf.width=W; tcFbuf.height=H;
+    tcFctx=tcFbuf.getContext('2d');
+    tcFctx.fillStyle='#000'; tcFctx.fillRect(0,0,W,H);
+  }
+
+  // beat detection
+  const bd=bass-tcPrevBass; tcPrevBass=bass;
+  const beat=bd>0.07&&bass>0.3;
+  if(beat){
+    tcBeatCount++;
+    if(tcBeatCount%4===0) tcShape=(tcShape+1)%6;
+    tcHueTgt=(tcHueTgt+55+Math.random()*130)%360;
+    tcFlash=1.0;
+    tcZoomV+=0.06+bass*0.1;
+    if(tcBeatCount%3===0) tcInv=!tcInv;
+  }
+
+  tcHue+=(tcHueTgt-tcHue)*0.05;
+  tcZoomV*=0.87; tcZoom+=tcZoomV; tcZoom+=(1-tcZoom)*0.055;
+  tcZoom=Math.max(0.93,Math.min(1.15,tcZoom));
+  tcFlash=Math.max(0,tcFlash-0.065);
+
+  const cx=W/2, cy=H/2;
+  const R=Math.min(W,H)*0.46;
+
+  // ── Step 1: zoom-smear previous frame inside feedback buffer ──
+  // Copy fbuf into a temp, then redraw scaled back
+  const fc=tcFctx;
+  fc.save();
+  fc.globalAlpha=0.86;
+  fc.translate(cx,cy);
+  fc.rotate((tcInv?-1:1)*tcSpin*0.004);
+  fc.scale(tcZoom,tcZoom);
+  fc.drawImage(tcFbuf,-cx,-cy);
+  fc.restore();
+  fc.globalAlpha=0.08;
+  fc.fillStyle='#000';
+  fc.fillRect(0,0,W,H);
+  fc.globalAlpha=1;
+
+  // ── Step 2: draw shapes into feedback buffer ──────────────────
+  fc.save();
+  fc.translate(cx,cy);
+
+  function fv(i){ return freqData[Math.floor(Math.min(i,bufferLen-1))]/255; }
+  function fvN(frac){ return fv(Math.floor(frac*bufferLen*0.88)); }
+
+  switch(tcShape){
+
+    case 0:{ // DIAMOND TUNNEL
+      for(let r=22;r>0;r--){
+        const fr=r/22;
+        const amp=fvN(fr);
+        const s=R*fr*(0.75+amp*0.55);
+        const hue=tcHueGet(fr*100);
+        fc.beginPath();
+        fc.moveTo(0,-s); fc.lineTo(s*0.7,0); fc.lineTo(0,s); fc.lineTo(-s*0.7,0);
+        fc.closePath();
+        fc.strokeStyle=`hsla(${hue},100%,${50+amp*40}%,${0.3+amp*0.6})`;
+        fc.lineWidth=1.5+amp*5;
+        fc.shadowBlur=10+amp*18; fc.shadowColor=`hsl(${hue},100%,65%)`;
+        fc.stroke();
+      }
+      break;
+    }
+
+    case 1:{ // CROSS BARS
+      const len=Math.max(W,H)*0.7;
+      const bw=12+bass*70+mid*35;
+      for(let a=0;a<4;a++){
+        const ang=a*Math.PI/2+tcSpin*0.01;
+        const amp=fvN(a/4);
+        const hue=tcHueGet(a*90);
+        const gx=Math.cos(ang)*len, gy=Math.sin(ang)*len;
+        const gr=fc.createLinearGradient(0,0,gx,gy);
+        gr.addColorStop(0,`hsla(${hue},100%,75%,${0.6+amp*0.4})`);
+        gr.addColorStop(1,`hsla(${hue},100%,40%,0)`);
+        fc.save(); fc.rotate(ang);
+        fc.fillStyle=gr;
+        fc.fillRect(0,-bw/2,len,bw);
+        fc.restore();
+      }
+      // diagonals
+      for(let a=0;a<4;a++){
+        const ang=a*Math.PI/2+Math.PI/4+tcSpin*0.012;
+        const amp=fvN(0.4+a*0.1);
+        const hue=tcHueGet(45+a*90);
+        const gr=fc.createLinearGradient(0,0,Math.cos(ang)*len,Math.sin(ang)*len);
+        gr.addColorStop(0,`hsla(${hue},100%,65%,${0.35+amp*0.4})`);
+        gr.addColorStop(1,`hsla(${hue},100%,30%,0)`);
+        fc.save(); fc.rotate(ang);
+        fc.fillStyle=gr;
+        fc.fillRect(0,-bw*0.35,len,bw*0.7);
+        fc.restore();
+      }
+      break;
+    }
+
+    case 2:{ // RING BURST
+      for(let r=0;r<18;r++){
+        const fr=r/18;
+        const amp=fvN(fr);
+        const phase=(tcT*1.6+fr*Math.PI*2)%(Math.PI*2);
+        const rad=R*0.9*(phase/(Math.PI*2));
+        const hue=tcHueGet(fr*160);
+        fc.beginPath();
+        fc.arc(0,0,Math.max(1,rad*(0.65+amp*0.5)),0,Math.PI*2);
+        fc.strokeStyle=`hsla(${hue},100%,${48+amp*42}%,${0.5+Math.sin(phase)*0.4})`;
+        fc.lineWidth=2.5+amp*8+bass*10;
+        fc.shadowBlur=14+amp*22; fc.shadowColor=`hsl(${hue},100%,68%)`;
+        fc.stroke();
+      }
+      break;
+    }
+
+    case 3:{ // SECTOR SWEEP
+      const sects=10;
+      for(let s=0;s<sects;s++){
+        const fr=s/sects;
+        const amp=fvN(fr);
+        const a0=fr*Math.PI*2+tcSpin*0.035;
+        const a1=a0+(Math.PI*2/sects)*0.82;
+        const rad=R*(0.28+amp*0.72);
+        const hue=tcHueGet(fr*360);
+        const gr=fc.createRadialGradient(0,0,0,0,0,rad);
+        gr.addColorStop(0,`hsla(${hue},100%,80%,${0.08+amp*0.25})`);
+        gr.addColorStop(0.5,`hsla(${hue},100%,58%,${0.38+amp*0.5})`);
+        gr.addColorStop(1,`hsla(${(hue+50)%360},100%,38%,0)`);
+        fc.beginPath();
+        fc.moveTo(0,0); fc.arc(0,0,rad,a0,a1); fc.closePath();
+        fc.fillStyle=gr;
+        fc.shadowBlur=8+amp*16; fc.shadowColor=`hsl(${hue},100%,62%)`;
+        fc.fill();
+      }
+      break;
+    }
+
+    case 4:{ // HEXAGON TUNNEL
+      for(let r=20;r>0;r--){
+        const fr=r/20;
+        const amp=fvN(fr);
+        const rad=R*fr*(0.82+amp*0.38);
+        const rot=tcSpin*(fr<0.5?0.055:-0.055);
+        const hue=tcHueGet(fr*180);
+        fc.beginPath();
+        for(let v=0;v<=6;v++){
+          const ang=v/6*Math.PI*2+rot;
+          v===0?fc.moveTo(Math.cos(ang)*rad,Math.sin(ang)*rad)
+               :fc.lineTo(Math.cos(ang)*rad,Math.sin(ang)*rad);
+        }
+        fc.strokeStyle=`hsla(${hue},100%,${48+amp*42}%,${0.28+amp*0.62})`;
+        fc.lineWidth=1.4+amp*4.5;
+        fc.shadowBlur=9+amp*16; fc.shadowColor=`hsl(${hue},100%,62%)`;
+        fc.stroke();
+      }
+      break;
+    }
+
+    case 5:{ // STAR TUNNEL
+      for(let r=18;r>0;r--){
+        const fr=r/18;
+        const amp=fvN(fr);
+        const oR=R*fr*(0.78+amp*0.48);
+        const iR=oR*0.4;
+        const rot=tcSpin*(0.04+fr*0.025)*(r%2===0?1:-1);
+        const hue=tcHueGet(fr*140);
+        fc.beginPath();
+        for(let v=0;v<10;v++){
+          const ang=v/5*Math.PI+rot;
+          const rd=v%2===0?oR:iR;
+          v===0?fc.moveTo(Math.cos(ang)*rd,Math.sin(ang)*rd)
+               :fc.lineTo(Math.cos(ang)*rd,Math.sin(ang)*rd);
+        }
+        fc.closePath();
+        fc.strokeStyle=`hsla(${hue},100%,${52+amp*38}%,${0.32+amp*0.58})`;
+        fc.lineWidth=1.4+amp*4;
+        fc.shadowBlur=10+amp*18; fc.shadowColor=`hsl(${hue},100%,68%)`;
+        fc.stroke();
+      }
+      break;
+    }
+  }
+
+  fc.shadowBlur=0;
+  fc.restore();
+
+  // ── Step 3: colour wash over feedback buffer ──────────────────
+  const wAlpha=energy*0.14+bass*0.18;
+  fc.fillStyle=`hsla(${tcHueGet(0)},100%,50%,${wAlpha})`;
+  fc.fillRect(0,0,W,H);
+
+  // ── Step 4: clear main canvas, composite feedback buffer ───────
+  ctx.fillStyle='#000';
+  ctx.fillRect(0,0,W,H);
+
+  if(tcInv){
+    // invert by drawing the buffer then differencing white
+    ctx.drawImage(tcFbuf,0,0);
+    ctx.save();
+    ctx.globalCompositeOperation='difference';
+    ctx.fillStyle=`hsl(${tcHueGet(180)},55%,${18+energy*35}%)`;
+    ctx.fillRect(0,0,W,H);
+    ctx.restore();
+  } else {
+    ctx.drawImage(tcFbuf,0,0);
+  }
+
+  // ── Step 5: strobe flash ──────────────────────────────────────
+  if(tcFlash>0){
+    ctx.fillStyle=`rgba(255,255,255,${tcFlash*0.5})`;
+    ctx.fillRect(0,0,W,H);
+    ctx.fillStyle=`hsla(${tcHueGet()},100%,60%,${tcFlash*0.3})`;
+    ctx.fillRect(0,0,W,H);
+  }
+
+  // ── Step 6: centre glow burst ─────────────────────────────────
+  ctx.save();
+  ctx.globalCompositeOperation='screen';
+  const cg=ctx.createRadialGradient(cx,cy,0,cx,cy,R*(0.05+bass*0.16));
+  cg.addColorStop(0,`hsla(${tcHueGet()},100%,96%,${0.45+bass*0.55})`);
+  cg.addColorStop(1,'rgba(0,0,0,0)');
+  ctx.fillStyle=cg;
+  ctx.beginPath(); ctx.arc(cx,cy,R*(0.05+bass*0.16),0,Math.PI*2); ctx.fill();
+  ctx.restore();
+}
+
+// ═══════════════════════════════════════════════════════════════
+// KALEIDOSCOPE — Kaleidosync-style symmetry scope
+// Single waveform slice rendered to offscreen wedge, stamped N
+// times with alternating mirror-flip around the centre.
+// Hue cycling, zoom-pulse on bass, persistent feedback trail.
+// ═══════════════════════════════════════════════════════════════
+let kaBuf=null, kaBufCtx=null;   // persistent feedback canvas
+let kaSlice=null, kaSliceCtx=null; // single-slice offscreen canvas
+let kaT=0, kaHue=0, kaHueTgt=0;
+let kaFolds=6;                   // number of mirror folds (changes on beat)
+let kaZoom=1, kaZoomV=0;
+let kaPrevBass=0, kaBeatCount=0;
+let kaSpeed=0;                   // accumulated rotation
+
+function drawKaleido(){
+  // ── init buffers ────────────────────────────────────────────
+  if(!kaBuf || kaBuf.width!==W || kaBuf.height!==H){
+    kaBuf=document.createElement('canvas');
+    kaBuf.width=W; kaBuf.height=H;
+    kaBufCtx=kaBuf.getContext('2d');
+    kaBufCtx.fillStyle='#000'; kaBufCtx.fillRect(0,0,W,H);
+  }
+
+  const S=Math.ceil(Math.max(W,H)*0.72); // slice canvas size
+  if(!kaSlice || kaSlice.width!==S){
+    kaSlice=document.createElement('canvas');
+    kaSlice.width=S; kaSlice.height=S;
+    kaSliceCtx=kaSlice.getContext('2d');
+  }
+
+  // ── timing & beat ───────────────────────────────────────────
+  kaT += 0.016 + energy*0.022;
+  kaSpeed += 0.003 + energy*0.008 + bass*0.018;
+
+  const bd=bass-kaPrevBass; kaPrevBass=bass;
+  const isBeat=bd>0.07 && bass>0.28;
+  if(isBeat){
+    kaBeatCount++;
+    kaHueTgt=(kaHueTgt+45+Math.random()*90)%360;
+    kaZoomV+=0.04+bass*0.08;
+    if(kaBeatCount%5===0){
+      // change fold count: 4,6,8,12
+      kaFolds=[4,6,8,12][Math.floor(Math.random()*4)];
+    }
+  }
+
+  // smooth hue
+  kaHue+=(kaHueTgt-kaHue)*0.04;
+  // zoom spring
+  kaZoomV*=0.88; kaZoom+=kaZoomV; kaZoom+=(1-kaZoom)*0.05;
+  kaZoom=Math.max(0.94,Math.min(1.12,kaZoom));
+
+  const cx=W/2, cy=H/2;
+  const R=Math.min(W,H)*0.5;
+
+  // ── STEP 1: draw the waveform paintbrush into the slice canvas
+  // Drawn from the CENTRE of the slice canvas so it stamps correctly.
+  kaSliceCtx.clearRect(0,0,S,S);
+
+  // Translate origin to slice canvas centre
+  kaSliceCtx.save();
+  kaSliceCtx.translate(S/2, S/2);
+
+  const pts=bufferLen<1024?bufferLen:1024;
+
+  // Background glow halo
+  const bgGrd=kaSliceCtx.createRadialGradient(0,0,0,0,0,S*0.5);
+  const h0=kaHue;
+  bgGrd.addColorStop(0,`hsla(${h0},100%,12%,0.18)`);
+  bgGrd.addColorStop(1,'rgba(0,0,0,0)');
+  kaSliceCtx.fillStyle=bgGrd;
+  kaSliceCtx.fillRect(-S/2,-S/2,S,S);
+
+  const sliceAngle=Math.PI*2/kaFolds;
+
+  // Draw several frequency-driven rings into the slice
+  const rings=5;
+  for(let ri=0;ri<rings;ri++){
+    const rfrac=ri/rings;
+    const freqBand=Math.floor(rfrac*pts*0.7);
+    const amp=freqData[freqBand]/255;
+    const baseR=S*(0.08+rfrac*0.38);
+
+    kaSliceCtx.beginPath();
+    const ringPts=128;
+    for(let i=0;i<=ringPts;i++){
+      const frac=i/ringPts;
+      const ang=frac*sliceAngle;
+      const fIdx=Math.floor(frac*pts);
+      const tv=(timeData[fIdx]/128-1);
+      const fv=freqData[Math.floor(frac*pts*0.85)]/255;
+      const r=baseR*(0.78+fv*0.48+tv*0.18*amp) + Math.sin(frac*Math.PI*6+kaT*2+ri)*baseR*0.06*amp;
+      i===0?kaSliceCtx.moveTo(Math.cos(ang)*r, Math.sin(ang)*r)
+           :kaSliceCtx.lineTo(Math.cos(ang)*r, Math.sin(ang)*r);
+    }
+
+    const hue=theme.tiedye
+      ? (kaHue+rfrac*420+kaT*18)%360
+      : theme.hueBase<0
+        ? (kaHue+rfrac*120+kaT*18)%360
+        : (theme.hueBase+rfrac*theme.hueRange+kaT*8)%360;
+    const alpha=0.4+amp*0.55;
+    const lw=1.2+amp*4+bass*3;
+
+    kaSliceCtx.strokeStyle=`hsla(${hue},${theme.sat}%,${theme.lit}%,${alpha})`;
+    kaSliceCtx.lineWidth=lw;
+    kaSliceCtx.shadowBlur=8+amp*18+bass*14;
+    kaSliceCtx.shadowColor=`hsl(${hue},100%,70%)`;
+    kaSliceCtx.stroke();
+  }
+
+  // Radial frequency spikes in the slice
+  const spikes=32;
+  for(let sp=0;sp<spikes;sp++){
+    const frac=sp/spikes;
+    const ang=frac*sliceAngle;
+    const fv=freqData[Math.floor(frac*pts*0.8)]/255;
+    const r1=S*0.06;
+    const r2=S*(0.08+fv*0.42+bass*0.10);
+    const hue=theme.tiedye
+      ? (kaHue+frac*420+kaT*15)%360
+      : theme.hueBase<0
+        ? (kaHue+frac*180+kaT*15)%360
+        : (theme.hueBase+frac*theme.hueRange*0.5)%360;
+    kaSliceCtx.beginPath();
+    kaSliceCtx.moveTo(Math.cos(ang)*r1, Math.sin(ang)*r1);
+    kaSliceCtx.lineTo(Math.cos(ang)*r2, Math.sin(ang)*r2);
+    kaSliceCtx.strokeStyle=`hsla(${hue},${theme.sat}%,${theme.lit}%,${0.3+fv*0.6})`;
+    kaSliceCtx.lineWidth=1+fv*2.5;
+    kaSliceCtx.shadowBlur=5+fv*12;
+    kaSliceCtx.shadowColor=`hsl(${hue},100%,65%)`;
+    kaSliceCtx.stroke();
+  }
+  kaSliceCtx.shadowBlur=0;
+  kaSliceCtx.restore(); // undo translate to S/2,S/2
+
+  // ── STEP 2: feedback buffer — zoom-spin the previous frame ──
+  kaBufCtx.save();
+  kaBufCtx.globalAlpha=0.84;
+  kaBufCtx.translate(cx,cy);
+  kaBufCtx.rotate(kaSpeed*0.006);
+  kaBufCtx.scale(kaZoom,kaZoom);
+  kaBufCtx.drawImage(kaBuf,-cx,-cy);
+  kaBufCtx.restore();
+  // fade to black slowly
+  kaBufCtx.globalAlpha=0.12;
+  kaBufCtx.fillStyle='#000';
+  kaBufCtx.fillRect(0,0,W,H);
+  kaBufCtx.globalAlpha=1;
+
+  // ── STEP 3: stamp the slice N times around the centre ───────
+  kaBufCtx.save();
+  kaBufCtx.translate(cx,cy);
+  kaBufCtx.rotate(kaSpeed*0.012); // slow global rotation
+
+  for(let f=0;f<kaFolds;f++){
+    kaBufCtx.save();
+    kaBufCtx.rotate(f*sliceAngle);
+
+    // clip to this fold's wedge — use diagonal so it reaches screen corners
+    kaBufCtx.beginPath();
+    kaBufCtx.moveTo(0,0);
+    kaBufCtx.arc(0,0,Math.max(W,H), 0, sliceAngle);
+    kaBufCtx.closePath();
+    kaBufCtx.clip();
+
+    // mirror every other fold
+    if(f%2===1){
+      kaBufCtx.rotate(sliceAngle);
+      kaBufCtx.scale(-1,1);
+    }
+
+    // draw slice centred at origin (which is translated to cx,cy)
+    kaBufCtx.drawImage(kaSlice, -S/2, -S/2);
+    kaBufCtx.restore();
+  }
+  kaBufCtx.restore();
+
+  // ── STEP 4: vignette on feedback buffer ─────────────────────
+  const vig=kaBufCtx.createRadialGradient(cx,cy,R*0.3,cx,cy,R*1.1);
+  vig.addColorStop(0,'rgba(0,0,0,0)');
+  vig.addColorStop(1,'rgba(0,0,0,0.55)');
+  kaBufCtx.fillStyle=vig;
+  kaBufCtx.fillRect(0,0,W,H);
+
+  // ── STEP 5: composite to main canvas ────────────────────────
+  ctx.drawImage(kaBuf,0,0);
+
+  // ── STEP 6: bright centre core ──────────────────────────────
+  const coreHue=theme.hueBase<0?(kaHue+kaT*20)%360:theme.hueBase;
+  const coreR=R*(0.03+bass*0.1+energy*0.04);
+  const cg=ctx.createRadialGradient(cx,cy,0,cx,cy,coreR*2);
+  cg.addColorStop(0,`hsla(${coreHue},100%,98%,${0.55+bass*0.45})`);
+  cg.addColorStop(0.4,`hsla(${coreHue},100%,70%,${0.2+bass*0.3})`);
+  cg.addColorStop(1,'rgba(0,0,0,0)');
+  ctx.save();
+  ctx.globalCompositeOperation='screen';
+  ctx.fillStyle=cg;
+  ctx.beginPath(); ctx.arc(cx,cy,coreR*2,0,Math.PI*2); ctx.fill();
+  ctx.restore();
+  ctx.shadowBlur=0;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// PLEXUS — floating 3D nodes connected by glowing lines
+// ═══════════════════════════════════════════════════════════════
+const PLX_N = 90;
+const PLX_CONNECT = 200;
+let plxNodes = [];
+let plxT = 0;
+let plxBeatFlash = 0;
+let plxBeatScale = 1;   // explosive scale punch on beat
+let plxCamRot = 0;
+let plxCamTilt = 0;
+let plxPrevBass = 0;
+let plxPrevEnergy = 0;
+
+function initPlexus(){
+  plxNodes = Array.from({length: PLX_N}, () => ({
+    x:  (Math.random() - .5) * 1600,
+    y:  (Math.random() - .5) * 1000,
+    z:  (Math.random() - .5) * 800,
+    vx: (Math.random() - .5) * .4,
+    vy: (Math.random() - .5) * .3,
+    vz: (Math.random() - .5) * .35,
+    // Each node assigned to a specific frequency band
+    freq: Math.floor(Math.random() * Math.min(512, (typeof bufferLen!=='undefined'?bufferLen:512) * .7)),
+    hue:  180 + Math.random() * 160,
+    size: .7 + Math.random() * 1.6,
+    phase: Math.random() * Math.PI * 2,  // individual wobble phase
+  }));
+  plxBeatFlash = 0; plxBeatScale = 1;
+  plxCamRot = 0; plxCamTilt = 0;
+  plxPrevBass = 0; plxPrevEnergy = 0;
+}
+
+function drawPlexus(){
+  plxT += .016;
+
+  // ── beat detection — sharp delta trigger ─────────────────────
+  const bassDelta   = bass   - plxPrevBass;
+  const energyDelta = energy - plxPrevEnergy;
+  plxPrevBass   = bass;
+  plxPrevEnergy = energy;
+
+  const isBeat = bassDelta > .06 && bass > .3;
+  if(isBeat){
+    plxBeatFlash = 1;
+    plxBeatScale = 1.35 + bass * .5;   // explosive punch
+  }
+
+  // decay
+  plxBeatFlash = Math.max(0, plxBeatFlash - .07);
+  plxBeatScale += (1 - plxBeatScale) * .18;  // spring back
+
+  // camera spins faster with energy, lurches on beats
+  plxCamRot  += .001 + energy * .004 + (isBeat ? .04 : 0);
+  plxCamTilt += .0005 + mid   * .002 + (isBeat ? .02 : 0);
+
+  // ── background ───────────────────────────────────────────────
+  const bg = ctx.createLinearGradient(0, 0, W, H);
+  bg.addColorStop(0,  '#03010d');
+  bg.addColorStop(.4, '#060218');
+  bg.addColorStop(.7, '#080312');
+  bg.addColorStop(1,  '#04010a');
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, W, H);
+
+  // ── nebula clouds — throb with bass/mid ──────────────────────
+  const nebulas = [
+    { x:.38, y:.32, r:W*(.28+energy*.12), h:220, a:.05+energy*.12  },
+    { x:.72, y:.55, r:W*(.18+bass*.14),   h:300, a:.03+bass*.12    },
+    { x:.18, y:.62, r:W*(.16+mid*.12),    h:260, a:.025+mid*.10    },
+  ];
+  nebulas.forEach(n=>{
+    const ng = ctx.createRadialGradient(n.x*W, n.y*H, 0, n.x*W, n.y*H, n.r);
+    ng.addColorStop(0,  `hsla(${n.h},100%,40%,${n.a})`);
+    ng.addColorStop(.5, `hsla(${n.h},80%,22%,${n.a*.5})`);
+    ng.addColorStop(1,  'rgba(0,0,0,0)');
+    ctx.fillStyle = ng;
+    ctx.fillRect(0, 0, W, H);
+  });
+
+  // ── beat flash ───────────────────────────────────────────────
+  if(plxBeatFlash > 0){
+    const bh = themeHue(0, 20, 1);
+    const bg2 = ctx.createRadialGradient(W/2,H/2,0,W/2,H/2,Math.max(W,H)*.7);
+    bg2.addColorStop(0, `hsla(${bh},100%,75%,${plxBeatFlash*.18})`);
+    bg2.addColorStop(.5,`hsla(${bh},100%,50%,${plxBeatFlash*.06})`);
+    bg2.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = bg2;
+    ctx.fillRect(0,0,W,H);
+  }
+
+  // ── project nodes ─────────────────────────────────────────────
+  const cosR = Math.cos(plxCamRot),  sinR = Math.sin(plxCamRot);
+  const cosT = Math.cos(plxCamTilt), sinT = Math.sin(plxCamTilt);
+  const FL = 580;
+
+  const projected = plxNodes.map(n => {
+    const fv = freqData ? freqData[Math.min(n.freq, bufferLen-1)] / 255 : 0;
+
+    // speed: base drift + freq band amplitude + bass kick + beat punch
+    const spd = 1 + fv * 2.5 + bass * 2.0 + plxBeatFlash * 3.0;
+    n.x += n.vx * spd;
+    n.y += n.vy * spd;
+    n.z += n.vz * spd;
+
+    // turbulence scales with treble and energy
+    const turb = .025 + treble * .06 + energy * .04;
+    n.vx += (Math.random() - .5) * turb;
+    n.vy += (Math.random() - .5) * turb * .7;
+    n.vz += (Math.random() - .5) * turb * .8;
+
+    // beat: explode nodes outward from centre
+    if(isBeat){
+      const mag = Math.sqrt(n.x*n.x + n.y*n.y + n.z*n.z) || 1;
+      n.vx += (n.x/mag) * bass * 4;
+      n.vy += (n.y/mag) * bass * 3;
+      n.vz += (n.z/mag) * bass * 3;
+    }
+
+    // dampen — tighter damping = snappier response
+    const damp = .988 - energy * .006;
+    n.vx *= damp; n.vy *= damp; n.vz *= damp;
+
+    // wrap
+    if(n.x >  900) n.x=-900; if(n.x<-900) n.x=900;
+    if(n.y >  550) n.y=-550; if(n.y<-550) n.y=550;
+    if(n.z >  450) n.z=-450; if(n.z<-450) n.z=450;
+
+    // Y-axis rotation (camera pan)
+    const rx = n.x*cosR - n.z*sinR;
+    const rz = n.x*sinR + n.z*cosR;
+    // X-axis tilt
+    const ry2 = n.y*cosT - rz*sinT;
+    const rz2 = n.y*sinT + rz*cosT;
+
+    // apply beat scale punch from centre
+    const sc = plxBeatScale;
+    const scale = FL / (FL + rz2 + 450);
+    const sx = W/2 + rx  * scale * sc;
+    const sy = H/2 + ry2 * scale * sc;
+
+    return { sx, sy, scale, fv, n };
+  });
+
+  // ── edges ─────────────────────────────────────────────────────
+  // connect distance expands with energy and beat
+  const connectDist = PLX_CONNECT * (1 + energy * .8 + plxBeatFlash * .5);
+
+  for(let i = 0; i < PLX_N; i++){
+    const a = projected[i];
+    for(let j = i+1; j < PLX_N; j++){
+      const b = projected[j];
+      const dx = a.sx-b.sx, dy = a.sy-b.sy;
+      const dist2 = dx*dx + dy*dy;
+      const cd2 = connectDist*connectDist;
+      if(dist2 > cd2) continue;
+
+      const dist = Math.sqrt(dist2);
+      const proximity = 1 - dist/connectDist;
+      const avgFv  = (a.fv + b.fv) * .5;
+      const avgSc  = (a.scale + b.scale) * .5;
+
+      const hA = a.n.hue, hB = b.n.hue;
+      const hue = (hA+hB)*.5;
+
+      // alpha and width both punch on beat
+      const beatBoost = 1 + plxBeatFlash * 1.5;
+      const alpha = proximity*proximity * (.3 + avgFv*.6 + energy*.3) * avgSc * beatBoost;
+      const lw    = (.5 + proximity*1.8 + avgFv*1.2 + energy*.6) * avgSc * Math.min(beatBoost, 2);
+
+      const grad = ctx.createLinearGradient(a.sx,a.sy,b.sx,b.sy);
+      grad.addColorStop(0, `hsla(${hA},100%,78%,${Math.min(alpha,1)})`);
+      grad.addColorStop(1, `hsla(${hB},100%,78%,${Math.min(alpha,1)})`);
+
+      ctx.beginPath();
+      ctx.moveTo(a.sx,a.sy); ctx.lineTo(b.sx,b.sy);
+      ctx.strokeStyle = grad;
+      ctx.lineWidth = lw;
+      ctx.shadowBlur = 5 + proximity*12 + avgFv*14 + plxBeatFlash*8;
+      ctx.shadowColor = `hsl(${hue},100%,72%)`;
+      ctx.stroke();
+    }
+  }
+
+  // ── nodes ─────────────────────────────────────────────────────
+  projected.forEach(({ sx, sy, scale, fv, n }) => {
+    const beatBoost = 1 + plxBeatFlash * 1.8;
+    const r = n.size * scale * (1.8 + fv*3.5 + bass*2.0 + energy*1.0) * beatBoost;
+
+    const hue = theme.hueBase < 0
+      ? n.hue
+      : (theme.hueBase + (n.hue-200)/160*theme.hueRange) % 360;
+
+    // outer bloom glow
+    const gr = ctx.createRadialGradient(sx,sy,0,sx,sy,r*5);
+    gr.addColorStop(0,  `hsla(${hue},100%,80%,${(.28+fv*.4+energy*.2)*beatBoost})`);
+    gr.addColorStop(.4, `hsla(${hue},100%,55%,${(.10+fv*.18)*beatBoost})`);
+    gr.addColorStop(1,  'rgba(0,0,0,0)');
+    ctx.fillStyle = gr;
+    ctx.beginPath(); ctx.arc(sx,sy,r*5,0,6.28); ctx.fill();
+
+    // bright core
+    ctx.beginPath(); ctx.arc(sx,sy,r,0,6.28);
+    ctx.fillStyle = `hsla(${hue},75%,92%,${.75+fv*.25})`;
+    ctx.shadowBlur  = 14 + fv*24 + plxBeatFlash*20 + bass*12;
+    ctx.shadowColor = `hsl(${hue},100%,78%)`;
+    ctx.fill();
+
+    // white pinpoint
+    ctx.beginPath(); ctx.arc(sx,sy,r*.35,0,6.28);
+    ctx.fillStyle = `rgba(255,255,255,${.65+fv*.35})`;
+    ctx.shadowBlur = 6; ctx.fill();
+  });
+
+  ctx.shadowBlur = 0;
+}
+
+function drawScope(){
+  // ── init phosphor buffer ──────────────────────────────────────
+  if(!scopePhosphor || scopePhosphor.width!==W){
+    scopePhosphor = document.createElement('canvas');
+    scopePhosphor.width=W; scopePhosphor.height=H;
+    scopeCtx2 = scopePhosphor.getContext('2d');
+    scopeCtx2.fillStyle='#000'; scopeCtx2.fillRect(0,0,W,H);
+  }
+
+  // ── layout ───────────────────────────────────────────────────
+  const PAD  = Math.min(W,H)*0.08;
+  const SW   = W - PAD*2;   // scope width
+  const SH   = H - PAD*2;   // scope height
+  const OX   = PAD;          // origin X
+  const OY   = PAD;          // origin Y
+  const CY   = OY + SH/2;    // centre Y
+
+  // ── clear main canvas to near-black ─────────────────────────
+  ctx.fillStyle='rgba(0,4,2,0.55)';
+  ctx.fillRect(0,0,W,H);
+
+  // ── GRATICULE ────────────────────────────────────────────────
+  const DIVX=10, DIVY=8;
+  const gdx=SW/DIVX, gdy=SH/DIVY;
+
+  // outer bezel shadow
+  ctx.save();
+  ctx.shadowBlur=30; ctx.shadowColor='rgba(0,0,0,0.9)';
+  ctx.strokeStyle='rgba(0,80,40,0.25)';
+  ctx.lineWidth=1;
+  ctx.strokeRect(OX,OY,SW,SH);
+  ctx.restore();
+
+  // grid lines
+  ctx.save();
+  ctx.strokeStyle='rgba(0,180,80,0.12)';
+  ctx.lineWidth=0.5;
+  for(let i=0;i<=DIVX;i++){
+    ctx.beginPath(); ctx.moveTo(OX+i*gdx,OY); ctx.lineTo(OX+i*gdx,OY+SH); ctx.stroke();
+  }
+  for(let i=0;i<=DIVY;i++){
+    ctx.beginPath(); ctx.moveTo(OX,OY+i*gdy); ctx.lineTo(OX+SW,OY+i*gdy); ctx.stroke();
+  }
+  // centre cross tick marks
+  ctx.strokeStyle='rgba(0,220,100,0.22)';
+  ctx.lineWidth=0.8;
+  const tickLen=5;
+  for(let i=0;i<=DIVX*5;i++){   // minor ticks on centre H line
+    const x=OX+i*(SW/(DIVX*5));
+    ctx.beginPath(); ctx.moveTo(x,CY-tickLen); ctx.lineTo(x,CY+tickLen); ctx.stroke();
+  }
+  for(let i=0;i<=DIVY*5;i++){   // minor ticks on centre V line
+    const y=OY+i*(SH/(DIVY*5));
+    const mx=OX+SW/2;
+    ctx.beginPath(); ctx.moveTo(mx-tickLen,y); ctx.lineTo(mx+tickLen,y); ctx.stroke();
+  }
+  ctx.restore();
+
+  // ── TRIGGER — find zero crossing ────────────────────────────
+  // Scan for a rising zero-cross near the centre of the buffer
+  let trigIdx=0;
+  const scanStart=Math.floor(bufferLen*0.1);
+  const scanEnd  =Math.floor(bufferLen*0.5);
+  for(let i=scanStart;i<scanEnd-1;i++){
+    if(timeData[i]<128 && timeData[i+1]>=128){ trigIdx=i; break; }
+  }
+
+  // ── BEAM COLOR from theme ─────────────────────────────────────
+  let beamH, beamS, beamL;
+  if(theme.id==='mono'){
+    beamH=120; beamS=100; beamL=70;          // classic green phosphor
+  } else if(theme.hueBase<0){
+    beamH=(t*20)%360; beamS=theme.sat; beamL=theme.lit;
+  } else {
+    beamH=theme.hueBase; beamS=theme.sat; beamL=theme.lit;
+  }
+
+  // ── DRAW PHOSPHOR TRACE on offscreen buffer ──────────────────
+  // fade old phosphor gently (persistence)
+  scopeCtx2.globalCompositeOperation='source-over';
+  scopeCtx2.fillStyle='rgba(0,0,0,0.35)';
+  scopeCtx2.fillRect(0,0,W,H);
+
+  const pts = Math.min(bufferLen - trigIdx, 1024);
+  const xStep = SW / pts;
+
+  // multi-pass: thick glow → medium → fine beam
+  const passes=[
+    {lw:6,   alpha:0.06, blur:18},
+    {lw:2.5, alpha:0.25, blur:8},
+    {lw:1,   alpha:0.90, blur:3},
+  ];
+
+  passes.forEach(({lw,alpha,blur})=>{
+    scopeCtx2.beginPath();
+    for(let i=0;i<pts;i++){
+      const idx=trigIdx+i;
+      const v=(timeData[idx]/128)-1;           // -1 … +1
+      const x=OX + i*xStep;
+      const y=CY - v*(SH/2)*0.88;              // 88% vertical fill
+      i===0 ? scopeCtx2.moveTo(x,y) : scopeCtx2.lineTo(x,y);
+    }
+    scopeCtx2.strokeStyle=`hsla(${beamH},${beamS}%,${beamL}%,${alpha})`;
+    scopeCtx2.lineWidth=lw;
+    scopeCtx2.shadowBlur=blur;
+    scopeCtx2.shadowColor=`hsl(${beamH},${beamS}%,${beamL}%)`;
+    scopeCtx2.stroke();
+  });
+
+  // ── COMPOSITE phosphor onto main canvas ─────────────────────
+  ctx.drawImage(scopePhosphor,0,0);
+
+  // ── SCREEN OVERLAY: vignette + scanlines + glare ─────────────
+  // vignette
+  const vig=ctx.createRadialGradient(W/2,H/2,SH*0.2,W/2,H/2,Math.max(W,H)*0.7);
+  vig.addColorStop(0,'rgba(0,0,0,0)');
+  vig.addColorStop(1,'rgba(0,0,0,0.65)');
+  ctx.fillStyle=vig; ctx.fillRect(0,0,W,H);
+
+  // scanlines (subtle, every 3px)
+  ctx.fillStyle='rgba(0,0,0,0.06)';
+  for(let y=OY;y<OY+SH;y+=3){ ctx.fillRect(OX,y,SW,1); }
+
+  // screen-edge glare strip (top-left)
+  const glare=ctx.createLinearGradient(OX,OY,OX+SW*0.4,OY+SH*0.25);
+  glare.addColorStop(0,'rgba(255,255,255,0.025)');
+  glare.addColorStop(1,'rgba(255,255,255,0)');
+  ctx.fillStyle=glare; ctx.fillRect(OX,OY,SW,SH);
+
+  // ── HUD LABELS ───────────────────────────────────────────────
+  ctx.save();
+  ctx.font=`${Math.max(9,SW*0.012)}px "Space Mono",monospace`;
+  const labelCol=`hsla(${beamH},${beamS}%,${beamL}%,0.45)`;
+  ctx.fillStyle=labelCol;
+
+  // time/div label (bottom-left)
+  ctx.textAlign='left';
+  ctx.fillText('TIME/DIV  AUTO', OX+8, OY+SH-10);
+
+  // volt/div label (bottom-right)
+  ctx.textAlign='right';
+  const vpp=((Math.max(...Array.from({length:pts},(_,i)=>Math.abs(timeData[trigIdx+i]-128)))/128)*100).toFixed(0);
+  ctx.fillText(`${vpp}%  VOLT/DIV`, OX+SW-8, OY+SH-10);
+
+  // frequency estimate (top-right)
+  ctx.textAlign='right';
+  const freqEst=audioCtx ? (audioCtx.sampleRate/bufferLen*bass*200).toFixed(0)+' Hz' : '';
+  ctx.fillText(freqEst, OX+SW-8, OY+16);
+
+  // model plate (top-left)
+  ctx.textAlign='left';
+  ctx.fillStyle=`hsla(${beamH},${beamS}%,${beamL}%,0.2)`;
+  ctx.fillText('DUAL-TRACE  CH1', OX+8, OY+16);
+
+  ctx.restore();
+  ctx.shadowBlur=0;
+}
+
+function lerp(a,b,t){return a+(b-a)*t}
+
+// ═══════════════════════════════════════════════════════════════
+// VU METERS PRESET — drawn entirely on canvas
+// ═══════════════════════════════════════════════════════════════
+(function(){
+  const DB_MIN=-40, DB_MAX=3, SEGS=24, PEAK_HOLD_FRAMES=55;
+  const NEEDLE_MIN=-62, NEEDLE_MAX=62; // degrees of sweep
+
+  // per-channel state
+  const ch={
+    L:{ smooth:DB_MIN, peak:DB_MIN, hold:0 },
+    R:{ smooth:DB_MIN, peak:DB_MIN, hold:0 },
+  };
+
+  function linearToDb(v){
+    if(v<0.0001) return DB_MIN;
+    return Math.max(DB_MIN, Math.min(DB_MAX, 20*Math.log10(v)));
+  }
+
+  function updateCh(c, linear){
+    const db=linearToDb(linear);
+    const attack=0.28, release=0.045;
+    c.smooth = db>c.smooth ? c.smooth+(db-c.smooth)*attack : c.smooth+(db-c.smooth)*release;
+    if(c.smooth>c.peak){ c.peak=c.smooth; c.hold=PEAK_HOLD_FRAMES; }
+    else if(--c.hold<=0) c.peak=Math.max(c.peak-0.3, c.smooth);
+  }
+
+  function drawMeter(cx, cy, mW, mH, channel, label){
+    const s=channel.smooth, pk=channel.peak;
+    const amber='rgba(255,200,60,1)', green='rgba(34,238,102,1)', red='rgba(255,30,50,1)';
+    const dim=0.13;
+
+    // ── chassis background ───────────────────────────────────────
+    const chassis=ctx.createLinearGradient(cx-mW/2, cy-mH/2, cx-mW/2, cy+mH/2);
+    chassis.addColorStop(0,'rgba(30,24,10,0.97)');
+    chassis.addColorStop(1,'rgba(14,10,4,0.97)');
+    ctx.fillStyle=chassis;
+    roundRect(cx-mW/2, cy-mH/2, mW, mH, 8);
+    ctx.fill();
+
+    // chassis border
+    ctx.strokeStyle='rgba(80,65,20,0.7)';
+    ctx.lineWidth=1.5;
+    roundRect(cx-mW/2, cy-mH/2, mW, mH, 8);
+    ctx.stroke();
+
+    // inner panel inset shadow
+    ctx.strokeStyle='rgba(0,0,0,0.5)';
+    ctx.lineWidth=3;
+    roundRect(cx-mW/2+5, cy-mH/2+5, mW-10, mH-10, 5);
+    ctx.stroke();
+
+    const pad=mW*0.06;
+    const segW=(mW-pad*2)/SEGS - 1.5;
+    const segH=mH*0.09;
+    const segY=cy+mH*0.01;
+
+    // ── dB scale labels ─────────────────────────────────────────
+    const TICKS=[-40,-20,-10,-7,-3,0,3];
+    ctx.font=`${Math.max(8,mW*0.042)}px "Space Mono",monospace`;
+    ctx.textAlign='center';
+    TICKS.forEach(db=>{
+      const frac=(db-DB_MIN)/(DB_MAX-DB_MIN);
+      const x=cx-mW/2+pad+frac*(mW-pad*2);
+      ctx.fillStyle='rgba(200,170,80,0.4)';
+      ctx.fillText(db>0?'+'+db:String(db), x, segY-segH-3);
+      // tick line
+      ctx.strokeStyle='rgba(180,150,60,0.25)';
+      ctx.lineWidth=0.5;
+      ctx.beginPath(); ctx.moveTo(x, segY-segH-1); ctx.lineTo(x, segY-segH+2); ctx.stroke();
+    });
+
+    // ── LED segments ─────────────────────────────────────────────
+    const lit=Math.round((s-DB_MIN)/(DB_MAX-DB_MIN)*SEGS);
+    const peakIdx=Math.min(Math.round((pk-DB_MIN)/(DB_MAX-DB_MIN)*SEGS), SEGS-1);
+
+    for(let i=0;i<SEGS;i++){
+      const frac=i/SEGS;
+      const sx=cx-mW/2+pad + i*(segW+1.5);
+      const isOn=i<lit, isPeak=i===peakIdx&&!isOn;
+      let col;
+      if(frac>=((-3-DB_MIN)/(DB_MAX-DB_MIN)))      col=red;
+      else if(frac>=((-10-DB_MIN)/(DB_MAX-DB_MIN))) col=amber;
+      else col=green;
+
+      // unlit segment base
+      ctx.fillStyle=col.replace('1)',`${dim})`);
+      roundRect(sx, segY-segH, segW, segH, 1.5);
+      ctx.fill();
+
+      if(isOn){
+        // glow pass
+        ctx.shadowBlur=6+lit*0.1; ctx.shadowColor=col;
+        ctx.fillStyle=col;
+        roundRect(sx, segY-segH, segW, segH, 1.5);
+        ctx.fill();
+        ctx.shadowBlur=0;
+      }
+      if(isPeak){
+        ctx.strokeStyle='rgba(255,255,255,0.85)';
+        ctx.lineWidth=1;
+        roundRect(sx, segY-segH, segW, segH, 1.5);
+        ctx.stroke();
+      }
+    }
+
+    // ── needle dial ──────────────────────────────────────────────
+    const dialCX=cx;
+    const dialCY=cy+mH*0.35;
+    const dialR=mW*0.36;
+
+    // dial face
+    const dialFace=ctx.createRadialGradient(dialCX,dialCY-dialR*0.2,dialR*0.05, dialCX,dialCY,dialR);
+    dialFace.addColorStop(0,'rgba(48,40,16,1)');
+    dialFace.addColorStop(1,'rgba(18,14,4,1)');
+    ctx.beginPath();
+    ctx.arc(dialCX,dialCY,dialR,Math.PI,0);
+    ctx.closePath();
+    ctx.fillStyle=dialFace; ctx.fill();
+    ctx.strokeStyle='rgba(90,72,22,0.55)'; ctx.lineWidth=1;
+    ctx.stroke();
+
+    // scale arc ticks
+    for(let i=0;i<=10;i++){
+      const frac=i/10;
+      const db=DB_MIN+(DB_MAX-DB_MIN)*frac;
+      const ang=(Math.PI + frac*Math.PI); // 180→360
+      const major=i%2===0;
+      const r0=dialR*(major?0.82:0.88), r1=dialR*0.96;
+      const cos=Math.cos(ang),sin=Math.sin(ang);
+      ctx.strokeStyle=major?'rgba(200,170,80,0.55)':'rgba(200,170,80,0.25)';
+      ctx.lineWidth=major?1:0.6;
+      ctx.beginPath();
+      ctx.moveTo(dialCX+cos*r0, dialCY+sin*r0);
+      ctx.lineTo(dialCX+cos*r1, dialCY+sin*r1);
+      ctx.stroke();
+      // tick label on major
+      if(major && (db===-40||db===-20||db===-10||db===-3||db===0||db===3)){
+        ctx.fillStyle='rgba(200,170,80,0.45)';
+        ctx.font=`${Math.max(6,mW*0.038)}px "Space Mono",monospace`;
+        ctx.textAlign='center'; ctx.textBaseline='bottom';
+        const lr=dialR*0.74;
+        ctx.fillText(db>0?'+'+db:String(db), dialCX+Math.cos(ang)*lr, dialCY+Math.sin(ang)*lr+2);
+      }
+    }
+    ctx.textBaseline='alphabetic';
+
+    // needle
+    const pct=Math.max(0,Math.min(1,(s-DB_MIN)/(DB_MAX-DB_MIN)));
+    const needleAng=Math.PI + pct*Math.PI;
+    const nLen=dialR*0.88;
+    const ncos=Math.cos(needleAng), nsin=Math.sin(needleAng);
+
+    // shadow
+    ctx.shadowBlur=8; ctx.shadowColor='rgba(255,160,40,0.5)';
+    ctx.strokeStyle='rgba(255,200,70,0.95)'; ctx.lineWidth=1.5;
+    ctx.beginPath();
+    ctx.moveTo(dialCX - ncos*dialR*0.12, dialCY - nsin*dialR*0.12);
+    ctx.lineTo(dialCX + ncos*nLen, dialCY + nsin*nLen);
+    ctx.stroke();
+    ctx.shadowBlur=0;
+
+    // pivot dot
+    ctx.beginPath(); ctx.arc(dialCX,dialCY,4,0,Math.PI*2);
+    ctx.fillStyle='rgba(255,210,80,0.85)';
+    ctx.shadowBlur=6; ctx.shadowColor='rgba(255,160,40,0.8)';
+    ctx.fill(); ctx.shadowBlur=0;
+
+    // ── dBu digital readout ──────────────────────────────────────
+    const rdY=cy+mH*0.39;
+    ctx.fillStyle='rgba(255,200,60,0.65)';
+    ctx.font=`bold ${Math.max(10,mW*0.075)}px "Space Mono",monospace`;
+    ctx.textAlign='center';
+    ctx.fillText((s>=0?'+':'')+s.toFixed(1)+' dBu', dialCX, rdY+mH*0.09);
+
+    // ── channel label ────────────────────────────────────────────
+    ctx.font=`bold ${Math.max(8,mW*0.055)}px "Space Mono",monospace`;
+    ctx.fillStyle='rgba(200,160,50,0.35)';
+    ctx.textAlign='left';
+    ctx.fillText(label, cx-mW/2+pad, cy-mH/2+mH*0.09);
+
+    // ── brand strip ───────────────────────────────────────────────
+    ctx.font=`${Math.max(6,mW*0.038)}px "Space Mono",monospace`;
+    ctx.fillStyle='rgba(180,140,40,0.2)';
+    ctx.textAlign='center';
+    ctx.fillText('VU · POWER OUTPUT', cx, cy+mH/2-7);
+  }
+
+  // roundRect helper (canvas path, no fill/stroke)
+  function roundRect(x,y,w,h,r){
+    ctx.beginPath();
+    ctx.moveTo(x+r,y);
+    ctx.lineTo(x+w-r,y); ctx.arcTo(x+w,y,x+w,y+r,r);
+    ctx.lineTo(x+w,y+h-r); ctx.arcTo(x+w,y+h,x+w-r,y+h,r);
+    ctx.lineTo(x+r,y+h); ctx.arcTo(x,y+h,x,y+h-r,r);
+    ctx.lineTo(x,y+r); ctx.arcTo(x,y,x+r,y,r);
+    ctx.closePath();
+  }
+
+  window.drawVU=function(){
+    // solid dark background
+    ctx.fillStyle='#0a0804';
+    ctx.fillRect(0,0,W,H);
+
+    // derive pseudo-stereo from odd/even bins
+    let sumL=0,sumR=0;
+    for(let i=0;i<bufferLen;i++){
+      if(i%2===0) sumL+=freqData[i]; else sumR+=freqData[i];
+    }
+    updateCh(ch.L, sumL/(bufferLen/2*255));
+    updateCh(ch.R, sumR/(bufferLen/2*255));
+
+    // layout: two meters side by side, centred
+    const gap=W*0.03;
+    const mW=Math.min(W*0.44, 340);
+    const mH=Math.min(H*0.62, 320);
+    const totalW=mW*2+gap;
+    const startX=(W-totalW)/2;
+    const mY=H/2;
+
+    drawMeter(startX+mW/2,        mY, mW, mH, ch.L, 'CH · L');
+    drawMeter(startX+mW+gap+mW/2, mY, mW, mH, ch.R, 'CH · R');
+
+    // top brand plate
+    ctx.font=`${Math.max(9,W*0.012)}px "Space Mono",monospace`;
+    ctx.fillStyle='rgba(180,140,40,0.18)';
+    ctx.textAlign='center';
+    ctx.fillText('STEREO POWER AMPLIFIER  ·  MODEL VU-2', W/2, mY-mH/2-12);
+  };
+
+  // show fsBtn when audio starts
+  ['startBtn','sysAudioBtn'].forEach(id=>{
+    document.getElementById(id).addEventListener('click',()=>{
+      setTimeout(()=>document.getElementById('fsBtn').classList.add('visible'),700);
+    });
+  });
+})();
+
+// ═══════════════════════════════════════════════════════════════
+// FULLSCREEN
+// ═══════════════════════════════════════════════════════════════
+(function(){
+  const btn   = document.getElementById('fsBtn');
+  const label = document.getElementById('fsLabel');
+  const path  = document.getElementById('fsPath');
+
+  const ICON_EXPAND  = 'M3 3h6v2H5v4H3V3zm12 0h6v6h-2V5h-4V3zM3 15h2v4h4v2H3v-6zm16 4h-4v2h6v-6h-2v4z';
+  const ICON_COMPRESS= 'M5 3H3v6h2V5h4V3H5zm14 0h-4v2h4v4h2V3h-2zM3 15v6h6v-2H5v-4H3zm16 2h-4v2h6v-6h-2v4z';
+
+  function isFS(){
+    return !!(document.fullscreenElement||document.webkitFullscreenElement||document.mozFullScreenElement);
+  }
+
+  function updateBtn(){
+    if(isFS()){
+      label.textContent='Exit';
+      path.setAttribute('d', ICON_COMPRESS);
+      btn.title='Exit Fullscreen';
+    } else {
+      label.textContent='Fullscreen';
+      path.setAttribute('d', ICON_EXPAND);
+      btn.title='Enter Fullscreen';
+    }
+  }
+
+  btn.addEventListener('click',()=>{
+    if(!isFS()){
+      const el=document.documentElement;
+      (el.requestFullscreen||el.webkitRequestFullscreen||el.mozRequestFullScreen).call(el);
+    } else {
+      (document.exitFullscreen||document.webkitExitFullscreen||document.mozCancelFullScreen).call(document);
+    }
+  });
+
+  document.addEventListener('fullscreenchange',updateBtn);
+  document.addEventListener('webkitfullscreenchange',updateBtn);
+  document.addEventListener('mozfullscreenchange',updateBtn);
+})();
+
+// ═══════════════════════════════════════════════════════════════
+// BACK BUTTON — stop audio, hide HUD, return to idle screen
+// ═══════════════════════════════════════════════════════════════
+(function(){
+  const backBtn = document.getElementById('backBtn');
+
+  // Show alongside fullscreen button when audio starts
+  ['startBtn','sysAudioBtn'].forEach(id=>{
+    document.getElementById(id).addEventListener('click',()=>{
+      setTimeout(()=>backBtn.classList.add('visible'), 700);
+    });
+  });
+
+  backBtn.addEventListener('click',()=>{
+    // Stop audio context
+    if(audioCtx){
+      audioCtx.close().catch(()=>{});
+      audioCtx=null; analyser=null; freqData=null; timeData=null;
+    }
+
+    // Exit fullscreen if active
+    const isFS=!!(document.fullscreenElement||document.webkitFullscreenElement);
+    if(isFS){
+      (document.exitFullscreen||document.webkitExitFullscreen||document.mozCancelFullScreen)
+        .call(document).catch(()=>{});
+    }
+
+    // Reset feedback buffers so next session starts clean
+    fractalCanvas=null; scopePhosphor=null; tcFbuf=null; kaBuf=null;
+
+    // Hide all HUD elements
+    document.getElementById('panel').classList.remove('visible');
+    document.getElementById('topHud').classList.remove('visible');
+    document.getElementById('srcBadge').classList.remove('visible');
+    document.getElementById('fsBtn').classList.remove('visible');
+    backBtn.classList.remove('visible');
+
+    // Show idle screen
+    document.getElementById('idle').classList.remove('hidden');
+  });
+})();
+</script>
+</body>
+</html>
